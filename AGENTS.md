@@ -13,7 +13,9 @@ phases.
 
 - Python ≥ 3.12, managed with `uv` (`uv run`, `uv add`); never `pip` or
   bare `venv`.
-- MCP via the official `mcp` SDK (`FastMCP`); HTTP via `httpx`.
+- MCP via the official `mcp` SDK ≥ 2.0 (`MCPServer` from `mcp.server`);
+  HTTP via `httpx`. Note 2.0 renamed `FastMCP` to `MCPServer` and removed
+  the `mcp.server.fastmcp` package, so v1 examples do not apply.
 - Tools are hand-written with full descriptions. The upstream OpenAPI spec
   has none, so tool docstrings are the model's only guide to the data model.
 - Upstream API: `https://councilgateway.poteris.co.uk/council-api`.
