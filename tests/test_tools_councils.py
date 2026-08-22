@@ -7,6 +7,9 @@ tool failure as ``is_error=True`` with the text
 that text instead of trying to distinguish exception types.
 """
 
+import datetime
+import re
+from email.utils import format_datetime
 from typing import Any
 
 import pytest
@@ -248,3 +251,83 @@ async def test_get_council_maps_upstream_404(fixture_client: FixtureClient) -> N
 
     assert result.is_error is True
     assert "Council Gateway API 404:" in _text(result)
+
+
+# -- Upstream rate limiting (429) ------------------------------------------
+
+#: The route `list_councils` hits with its default arguments, overridden below
+#: to synthesise the 429 an unthrottled upstream never sends today.
+_DEFAULT_COUNCILS_ROUTE = ("GET", "/councils", (("page", "1"), ("per_page", "25")))
+
+
+async def test_upstream_429_tells_the_model_to_wait_the_stated_time(
+    transport: Any, fixture_client: FixtureClient
+) -> None:
+    transport.routes[_DEFAULT_COUNCILS_ROUTE] = (
+        429,
+        {"detail": "Rate limit exceeded"},
+        {"Retry-After": "30"},
+    )
+
+    async with Client(create_server(fixture_client)) as client:
+        result = await client.call_tool("list_councils", {})
+
+    assert result.is_error is True
+    message = _text(result)
+    assert "Council Gateway API 429: Rate limit exceeded" in message
+    assert "upstream rate limit, not a bug or a bad request" in message
+    assert "retry the same call with the same arguments after waiting" in message
+    assert "30 seconds" in message
+
+
+async def test_upstream_429_without_retry_after_still_reads_as_a_rate_limit(
+    transport: Any, fixture_client: FixtureClient
+) -> None:
+    transport.routes[_DEFAULT_COUNCILS_ROUTE] = (429, {"detail": "Slow down"})
+
+    async with Client(create_server(fixture_client)) as client:
+        result = await client.call_tool("list_councils", {})
+
+    assert result.is_error is True
+    message = _text(result)
+    assert "Council Gateway API 429: Slow down" in message
+    assert "upstream rate limit, not a bug or a bad request" in message
+    assert "No Retry-After was given" in message
+    assert "retry the same call with the same arguments" in message
+    # No duration is invented when upstream did not name one.
+    assert "seconds" in message
+    assert "-second wait" not in message
+
+
+async def test_upstream_429_is_not_retried_inside_the_tool(
+    transport: Any, fixture_client: FixtureClient
+) -> None:
+    transport.routes[_DEFAULT_COUNCILS_ROUTE] = (
+        429,
+        {"detail": "Rate limit exceeded"},
+        {"Retry-After": "1"},
+    )
+
+    async with Client(create_server(fixture_client)) as client:
+        await client.call_tool("list_councils", {})
+
+    assert len(fixture_client.requests) == 1
+
+
+async def test_an_http_date_retry_after_is_reported_in_seconds(
+    transport: Any, fixture_client: FixtureClient
+) -> None:
+    when = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=45)
+    transport.routes[_DEFAULT_COUNCILS_ROUTE] = (
+        429,
+        {"detail": "Rate limit exceeded"},
+        {"Retry-After": format_datetime(when, usegmt=True)},
+    )
+
+    async with Client(create_server(fixture_client)) as client:
+        result = await client.call_tool("list_councils", {})
+
+    message = _text(result)
+    assert "upstream rate limit" in message
+    # Rounded by the header's one-second resolution, so allow 44 as well as 45.
+    assert re.search(r"a 4[45](\.\d+)?-second wait", message), message

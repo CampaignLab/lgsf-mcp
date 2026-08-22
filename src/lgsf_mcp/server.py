@@ -135,9 +135,37 @@ DEFAULT_PUBLIC_URL = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}"
 _FETCH_ID = re.compile(r"\A(?P<kind>[A-Za-z]+)-(?P<id>\d+)\Z")
 
 
+#: Upstream throttling. Deliberately *not* retried inside the tool: a call
+#: that silently sleeps is worse for the model than a clear error, council-wide
+#: listings already take ~15s, and an internal retry would stack with the MCP
+#: client's own timeout. The model is told to wait and repeat the call instead.
+RATE_LIMITED_STATUS = 429
+
+
+def _rate_limit_advice(retry_after: float | None) -> str:
+    """The actionable half of a 429 message: how long to wait, if upstream said."""
+    if retry_after is None:
+        return (
+            "No Retry-After was given; wait a few seconds, then retry the same "
+            "call with the same arguments."
+        )
+    return (
+        f"Upstream asked for a {retry_after:g}-second wait; retry the same call "
+        f"with the same arguments after waiting {retry_after:g} seconds."
+    )
+
+
 def _api_error(e: CouncilApiError) -> str:
     """The single wording every tool uses for an upstream failure."""
-    return f"Council Gateway API {e.status}: {e.detail}"
+    base = f"Council Gateway API {e.status}: {e.detail}"
+    if e.status != RATE_LIMITED_STATUS:
+        return base
+    return (
+        f"{base} — this is an upstream rate limit, not a bug or a bad request, "
+        f"and the arguments were fine. "
+        f"{_rate_limit_advice(e.retry_after)} "
+        f"Do not rephrase the request or give up."
+    )
 
 
 def _parse_date(name: str, value: str | None) -> datetime.date | None:

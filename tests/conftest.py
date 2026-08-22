@@ -26,6 +26,10 @@ BASE_PATH = "/council-api"
 Query = tuple[tuple[str, str], ...]
 Route = tuple[str, str, Query]
 
+#: A canned response: ``(status, body)``, or ``(status, body, headers)`` where a
+#: test needs response headers such as ``Retry-After``.
+Canned = tuple[int, Any] | tuple[int, Any, Mapping[str, str]]
+
 
 def load_fixture(name: str) -> Any:
     return json.loads((FIXTURES / f"{name}.json").read_text())
@@ -52,8 +56,8 @@ def query(**params: object) -> Query:
     return tuple(sorted(encoded.items()))
 
 
-def _routes() -> dict[Route, tuple[int, Any]]:
-    """Map (method, path, sorted query) to (status, JSON body)."""
+def _routes() -> dict[Route, Canned]:
+    """Map (method, path, sorted query) to a canned response."""
     paging = {"page": 1, "per_page": 2}
     # The tools default to per_page=25 and get_council fetches committees with
     # per_page=100, so those pages are served from the same fixture bodies as
@@ -62,7 +66,7 @@ def _routes() -> dict[Route, tuple[int, Any]]:
     # assert on it.
     tool_paging = {"page": 1, "per_page": TOOL_PER_PAGE}
     committee_paging = {"page": 1, "per_page": COMMITTEE_PAGE_SIZE}
-    routes: dict[Route, tuple[int, Any]] = {
+    routes: dict[Route, Canned] = {
         ("GET", "/councils", query(**paging)): (200, load_fixture("councils")),
         ("GET", "/councils", query(**tool_paging)): (200, load_fixture("councils")),
         ("GET", f"/councils/{COUNCIL_ID}/committees", query(**committee_paging)): (
@@ -140,8 +144,8 @@ def _routes() -> dict[Route, tuple[int, Any]]:
 class FixtureTransport:
     """MockTransport handler that serves fixtures and records requests."""
 
-    def __init__(self, routes: Mapping[Route, tuple[int, Any]]) -> None:
-        self.routes = dict(routes)
+    def __init__(self, routes: Mapping[Route, Canned]) -> None:
+        self.routes: dict[Route, Canned] = dict(routes)
         self.requests: list[httpx.Request] = []
 
     @property
@@ -158,10 +162,12 @@ class FixtureTransport:
             path,
             tuple(sorted(request.url.params.multi_items())),
         )
-        status, body = self.routes.get(
+        canned: Canned = self.routes.get(
             key, (404, {"detail": f"No fixture for {key!r}"})
         )
-        return httpx.Response(status, json=body)
+        status, body = canned[0], canned[1]
+        headers = canned[2] if len(canned) == 3 else None
+        return httpx.Response(status, json=body, headers=headers)
 
 
 class FixtureClient(CouncilGatewayClient):
