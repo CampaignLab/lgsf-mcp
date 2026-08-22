@@ -20,6 +20,11 @@ phases.
   Currently open; `COUNCIL_API_TOKEN` is optional.
 - Scratch files go in `tmp/` (gitignored).
 - Tests: `uv run pytest`. Live tests are opt-in via `LGSF_LIVE=1`.
+- Quality gates, all of which must pass before a bead is done:
+  `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`
+  and `uv run mypy`. Note `ruff check` (lint) and `ruff format`
+  (formatting) are separate modes — a green lint does not imply clean
+  formatting, so run both. Use `uv run ruff format .` to fix.
 - Commits that implement or advance a bead carry a trailer line
   `Refs: bead <id>` (e.g. `Refs: bead lgmcp-a3f2dd`).
 
