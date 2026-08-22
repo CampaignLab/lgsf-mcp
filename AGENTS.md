@@ -20,6 +20,8 @@ phases.
   Currently open; `COUNCIL_API_TOKEN` is optional.
 - Scratch files go in `tmp/` (gitignored).
 - Tests: `uv run pytest`. Live tests are opt-in via `LGSF_LIVE=1`.
+- Commits that implement or advance a bead carry a trailer line
+  `Refs: bead <id>` (e.g. `Refs: bead lgmcp-a3f2dd`).
 
 ## Beads Solo
 
