@@ -17,7 +17,7 @@ import httpx
 import pytest
 
 from lgsf_mcp.client import CouncilGatewayClient
-from lgsf_mcp.server import COMMITTEE_PAGE_SIZE
+from lgsf_mcp.server import COMMITTEE_PAGE_SIZE, FETCH_SEARCH_SIZE
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -122,6 +122,12 @@ def _routes() -> dict[Route, tuple[int, Any]]:
             200,
             load_fixture("search_housing"),
         ),
+        # The `search` alias calls the backend at size=20, from the same body.
+        (
+            "GET",
+            "/search",
+            query(q="housing", mode="document", size=FETCH_SEARCH_SIZE, offset=0),
+        ): (200, load_fixture("search_housing")),
         ("GET", "/councils", query(page=1, per_page=1000)): (
             422,
             {"detail": load_fixture("validation_422")},

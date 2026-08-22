@@ -23,7 +23,7 @@ from tests.conftest import (
 )
 
 #: Every tool the server registers, so a forgotten registration fails loudly.
-EXPECTED_TOOL_COUNT = 12
+EXPECTED_TOOL_COUNT = 14
 
 
 def _text(result: Any) -> str:

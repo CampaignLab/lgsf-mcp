@@ -38,12 +38,25 @@ a plain ``ValueError`` would look identical to the client. Do *not* raise
 ``MCPError`` subclasses for ordinary tool failures: those bypass the wrapping
 and become top-level JSON-RPC errors.
 
+## ChatGPT's `structuredContent` + `content` requirement
+
+OpenAI's connector spec wants `search`/`fetch` results in *both*
+``structuredContent`` and a JSON-encoded ``content`` text block. The SDK
+already does this for any tool annotated to return a structured type such as
+``dict[str, Any]``: ``FuncMetadata.convert_result`` builds the ``content``
+blocks with ``_convert_to_content`` (which JSON-dumps a dict via
+``pydantic_core.to_json``) *and* the ``structured_content`` from the derived
+output model. So no serialisation code is needed here — only the annotation.
+Dropping the return annotation, or widening it to ``Any``, would silently
+lose ``structuredContent``.
+
 Reference: https://py.sdk.modelcontextprotocol.io/handlers/lifespan/
 """
 
 from __future__ import annotations
 
 import datetime
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -87,6 +100,15 @@ COMMITTEE_PAGE_SIZE = 100
 #: Hard ceiling on one ``get_document`` text window, to bound the response.
 MAX_TEXT_CHARS = 50_000
 
+#: ``fetch`` cannot page, so it returns one fixed window of a document's text.
+FETCH_TEXT_CHARS = 20_000
+
+#: Hits ChatGPT's ``search`` asks for in one go; it has no paging either.
+FETCH_SEARCH_SIZE = 20
+
+#: The ``<Type>-<int>`` ids that upstream search emits and ``fetch`` accepts.
+_FETCH_ID = re.compile(r"\A(?P<kind>[A-Za-z]+)-(?P<id>\d+)\Z")
+
 
 def _api_error(e: CouncilApiError) -> str:
     """The single wording every tool uses for an upstream failure."""
@@ -107,6 +129,59 @@ def _parse_date(name: str, value: str | None) -> datetime.date | None:
         raise ToolError(
             f"{name} must be a date in YYYY-MM-DD format, got {value!r}"
         ) from e
+
+
+#: The ``fetch`` id prefixes that resolve to something fetchable.
+FETCHABLE_KINDS = ("Document", "Meeting")
+
+
+def _parse_fetch_id(value: str) -> tuple[str, int]:
+    """Split a ``fetch`` id such as ``Document-1432934`` into kind and id."""
+    match = _FETCH_ID.match(value)
+    if match is None or match["kind"] not in FETCHABLE_KINDS:
+        raise ToolError(
+            f"unknown id format: {value!r}. Expected "
+            f"{' or '.join(f'{kind}-<number>' for kind in FETCHABLE_KINDS)}, "
+            f"for example Document-1432934."
+        )
+    return match["kind"], int(match["id"])
+
+
+def _meeting_markdown(meeting: dict[str, Any]) -> str:
+    """Render a meeting as Markdown, since ``fetch`` returns prose, not JSON.
+
+    Everything here is routinely null or empty upstream, so each section is
+    emitted only when it has content; a meeting with no summaries and no
+    papers legitimately renders as just its heading.
+    """
+    name = meeting.get("name") or f"Meeting {meeting.get('id')}"
+    date = meeting.get("date")
+    lines = [f"# {name}", ""]
+    if date:
+        lines += [f"**Date:** {date}", ""]
+    for label, key in (("Topline", "topline"), ("About", "about"), ("Notes", "notes")):
+        if meeting.get(key):
+            lines += [f"## {label}", "", str(meeting[key]), ""]
+    if meeting.get("agenda"):
+        lines += ["## Agenda", "", str(meeting["agenda"]), ""]
+    decisions = meeting.get("decisions") or []
+    if decisions:
+        lines += ["## Decisions", ""]
+        lines += [
+            f"- Decision-{decision.get('id')}: "
+            f"{decision.get('topline') or decision.get('outcome') or 'no summary'}"
+            for decision in decisions
+        ]
+        lines += [""]
+    documents = meeting.get("documents") or []
+    if documents:
+        lines += ["## Documents", ""]
+        lines += [
+            f"- Document-{document.get('id')}: {document.get('name') or 'untitled'}"
+            for document in documents
+        ]
+        lines += [""]
+    return "\n".join(lines).rstrip() + "\n"
 
 
 @dataclass
@@ -727,3 +802,106 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
             return await client.get_person(person_id)
         except CouncilApiError as e:
             raise ToolError(_api_error(e)) from e
+
+    # -- ChatGPT connector aliases ------------------------------------------
+    #
+    # ChatGPT only calls tools named exactly `search` and `fetch`, with these
+    # exact argument and result shapes; everything above is invisible to it.
+    # Other clients see all fourteen and should use the richer tools, which
+    # the descriptions say outright.
+
+    @server.tool()
+    async def search(ctx: Context[AppContext], query: str) -> dict[str, Any]:
+        """ChatGPT-compatible search over UK council documents; other clients
+        should prefer `search_council_data`, which exposes council filters,
+        paging, classification mode, match highlights and the full records.
+
+        Args:
+            query: A short topical phrase, e.g. `council tax reduction`.
+                Matching is phrase-style, so phrases beat questions.
+
+        Returns:
+            `results` — up to 20 matches, each with `id` (pass to `fetch`),
+            `title` and `url` (the council's own link, empty when unknown).
+        """
+        if len(query) < MIN_QUERY_LENGTH:
+            raise ToolError(
+                f"query must be at least {MIN_QUERY_LENGTH} characters, "
+                f"got {len(query)}"
+            )
+        backend = ctx.request_context.lifespan_context.search
+        try:
+            found = await backend.search(
+                query,
+                council_id=None,
+                mode="document",
+                size=FETCH_SEARCH_SIZE,
+                offset=0,
+            )
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+        return {
+            "results": [
+                {
+                    "id": hit["id"],
+                    "title": hit["title"] or hit["id"],
+                    "url": hit["record"].get("url") or "",
+                }
+                for hit in found["hits"]
+            ]
+        }
+
+    @server.tool()
+    async def fetch(ctx: Context[AppContext], id: str) -> dict[str, Any]:  # noqa: A002
+        """ChatGPT-compatible retrieval of one record by id; other clients
+        should prefer `get_document` (which pages through long text) or
+        `get_meeting` (which returns the structured record).
+
+        Args:
+            id: `Document-<number>` or `Meeting-<number>`, as returned by
+                `search`. Any other prefix is an error — people, decisions
+                and councils are not fetchable this way.
+
+        Returns:
+            `id`, `title`, `text` (document text or a Markdown rendering of
+            the meeting), `url` and `metadata`. **Document text is truncated
+            at 20000 characters**; `metadata.has_more` says whether more
+            follows, and `get_document(text_offset=...)` is the only way to
+            read it.
+        """
+        kind, numeric_id = _parse_fetch_id(id)
+        client = ctx.request_context.lifespan_context.client
+        try:
+            if kind == "Document":
+                document = await client.get_document(numeric_id, include_text=True)
+                chunk = window(document.get("text"), 0, FETCH_TEXT_CHARS)
+                return {
+                    "id": id,
+                    "title": document.get("name") or f"Document {numeric_id}",
+                    "text": chunk.text,
+                    "url": document.get("url") or "",
+                    "metadata": {
+                        "source_type": document.get("source_type"),
+                        "source_id": document.get("source_id"),
+                        "kind": document.get("kind"),
+                        "is_minutes": document.get("is_minutes"),
+                        "text_length": chunk.text_length,
+                        "has_more": chunk.has_more,
+                    },
+                }
+            meeting = await client.get_meeting(numeric_id)
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+        return {
+            "id": id,
+            "title": meeting.get("name") or f"Meeting {numeric_id}",
+            "text": _meeting_markdown(meeting),
+            "url": meeting.get("url") or "",
+            "metadata": {
+                "council_id": meeting.get("council_id"),
+                "committee_id": meeting.get("committee_id"),
+                "date": meeting.get("date"),
+                "document_count": len(meeting.get("documents") or []),
+                "decision_count": len(meeting.get("decisions") or []),
+            },
+        }
