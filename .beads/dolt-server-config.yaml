@@ -1,0 +1,10 @@
+log_level: warning
+behavior:
+    auto_gc_behavior:
+        archive_level: 0
+listener:
+    host: 127.0.0.1
+    port: 44531
+cfg_dir: /home/adam/soc/politics/lgsf-mcp/.beads/dolt/.doltcfg
+user_session_vars: []
+jwks: []
