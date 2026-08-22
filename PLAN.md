@@ -5,14 +5,46 @@
 | Decision | Choice | Why |
 | --- | --- | --- |
 | Language | Python ≥ 3.12 | Matches LGSF / DC ecosystem; `uv` for deps. |
-| MCP framework | `mcp` (official SDK, `FastMCP` class) | Decorator-based tools, schema from type hints. |
+| MCP framework | `mcp` ≥ 2.0 (official SDK, `MCPServer` class from `mcp.server`) | Decorator-based tools, schema from type hints. v2.0.0 (2026-07-28) renamed `FastMCP` → `MCPServer` and removed the `mcp.server.fastmcp` package. |
 | HTTP client | `httpx` | Async, typed, easy to mock. |
 | Transport | stdio **and** streamable HTTP (`--transport` flag) | stdio for Claude Code/Desktop. HTTP for testing from Claude.ai / ChatGPT via a public URL (Tailscale Funnel). |
 | Public test URL | Tailscale Funnel | `tailscale funnel 8000` → `https://<machine>.<tailnet>.ts.net`. Funnel (not Serve) is needed: Anthropic/OpenAI servers are not on the tailnet. No auth for testing; upstream is open and read-only anyway. |
 | ChatGPT compatibility | `search` + `fetch` tools in OpenAI's required shape | ChatGPT connectors require exactly these; Claude does not care. Rich tools keep distinct names. |
 | Tool definitions | Hand-written | Spec has zero descriptions; generated tools would be unusable by an LLM. 15 endpoints is small. |
-| Auth | Optional `COUNCIL_API_TOKEN` env var | API is currently open; send `Authorization: Bearer` only if set. |
+| Upstream auth | Optional `COUNCIL_API_TOKEN` env var | API is currently open; send `Authorization: Bearer` only if set. |
+| Inbound auth (HTTP) | None for first test; then OAuth resource-server mode | See *Protecting the HTTP endpoint* below. stdio needs none. |
 | Base URL | `COUNCIL_API_URL` env var, default `https://councilgateway.poteris.co.uk/council-api` | Lets a local gateway instance be used. |
+
+## Protecting the HTTP endpoint
+
+Once the server is on a public URL, anyone who finds it can use it. The
+upstream data is open and read-only, so the exposure is bandwidth and
+abuse, not data. Options, cheapest first:
+
+1. **Unguessable path** — serve at `/mcp-<random>/` and give that URL to
+   Claude.ai / ChatGPT. Zero code, works with every client, not real auth.
+   Fine for a first smoke test over Funnel.
+2. **Static bearer token** — `MCPServer(token_verifier=..., auth=AuthSettings(...))`
+   with a `TokenVerifier` that checks one env-var token. Keeps out casual
+   traffic. Works for clients that can send a fixed `Authorization`
+   header (Claude Code `.mcp.json`, `mcp` Python client, curl). **Does not
+   work for Claude.ai custom connectors or ChatGPT**, which only speak
+   OAuth or no-auth; neither UI offers a custom header.
+3. **OAuth 2.1 resource server** (the MCP spec's model) — this server
+   validates bearer tokens issued by a *separate* authorization server and
+   publishes `/.well-known/oauth-protected-resource`. Claude.ai and ChatGPT
+   both drive this flow. Needs an AS: either a hosted IdP (Auth0, Google,
+   GitHub via a proxy, etc.) or a tiny self-hosted one like the SDK's
+   `examples/servers/simple-auth` AS (credential form + `/introspect`).
+   `IntrospectionTokenVerifier` in that example is the model for the RS
+   side. Most work, and the only option that gives Claude.ai/ChatGPT a
+   real login.
+
+Plan: do 1 for the first Funnel test, add 2 immediately after (it is
+~30 lines and also protects local HTTP use), and treat 3 as its own
+phase once the server is worth sharing with other people.
+
+Note: SDK auth applies to HTTP transports only; stdio bypasses it.
 
 ## Layout
 
