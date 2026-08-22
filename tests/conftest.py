@@ -87,6 +87,10 @@ def _routes() -> dict[Route, tuple[int, Any]]:
             200,
             load_fixture("documents_meeting"),
         ),
+        ("GET", "/documents", query(meeting_id=MEETING_ID, **tool_paging)): (
+            200,
+            load_fixture("documents_meeting"),
+        ),
         ("GET", f"/documents/{DOCUMENT_ID}", query(include_text=False)): (
             200,
             load_fixture("document"),

@@ -55,6 +55,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from .client import CouncilApiError, CouncilGatewayClient
 from .search import SearchBackend, SearchMode, TextSearchBackend
+from .text import window
 
 SERVER_NAME = "lgsf-mcp"
 
@@ -82,6 +83,9 @@ MIN_QUERY_LENGTH = 2
 
 #: Committees are fetched eagerly by ``get_council``; 100 is the upstream cap.
 COMMITTEE_PAGE_SIZE = 100
+
+#: Hard ceiling on one ``get_document`` text window, to bound the response.
+MAX_TEXT_CHARS = 50_000
 
 
 def _api_error(e: CouncilApiError) -> str:
@@ -375,5 +379,180 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
         client = ctx.request_context.lifespan_context.client
         try:
             return await client.get_meeting(meeting_id)
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def list_documents(
+        ctx: Context[AppContext],
+        meeting_id: int | None = None,
+        decision_id: int | None = None,
+        council_id: int | None = None,
+        is_minutes: bool | None = None,
+        kind: str | None = None,
+        processing_status: str | None = None,
+        page: int = 1,
+        per_page: int = 25,
+    ) -> dict[str, Any]:
+        """List the papers — agendas, reports, minutes, usually PDFs — published
+        for meetings and decisions.
+
+        Documents are polymorphic: each hangs off *either* a meeting or a
+        decision, identified by `source_type` (`Meeting` | `Decision`) and
+        `source_id`. Filter by the parent you care about.
+
+        **Performance warning: filtering by `council_id` alone is slow
+        upstream (up to ~15s)** because a council has tens of thousands of
+        documents. Prefer `meeting_id` or `decision_id`, or use
+        `search_council_data` when you only know the topic. `get_meeting`
+        already returns a meeting's documents, so you rarely need
+        `meeting_id` here at all.
+
+        Args:
+            meeting_id: Only documents published for this meeting.
+            decision_id: Only documents attached to this decision.
+            council_id: Only documents belonging to this council. Slow on its
+                own — combine with another filter or avoid.
+            is_minutes: When true, only minutes documents. **These are the
+                documents that carry extracted text** you can read with
+                `get_document(include_text=true)`; agendas and reports
+                usually do not.
+            kind: Free-text upstream classification of the document. Values
+                are not enumerated by the API; the value seen most often is
+                `unclassified`.
+            processing_status: Free-text upstream pipeline state, not
+                enumerated by the API; `waiting` is what most records show.
+                Note this is *not* the same field as `extract_status` on the
+                returned records, which is the one that tells you whether
+                text extraction succeeded (`success`, `pending`).
+            page: One-based page number.
+            per_page: Documents per page (default 25; upstream caps at 100).
+
+        Returns:
+            `items` — the documents on this page, each with `id`,
+            `source_type`, `source_id`, `name` (often null), `url` (the
+            council's own link, which may be behind a redirect — use
+            `get_document_file_url` for a direct download), `kind`,
+            `extract_status`, `processing_status`, `is_minutes`, `is_media`,
+            the `contains_agenda` / `contains_attendees` /
+            `contains_decisions` flags and `created_at`. Plus `page`,
+            `per_page` and `total`.
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.list_documents(
+                meeting_id=meeting_id,
+                decision_id=decision_id,
+                council_id=council_id,
+                is_minutes=is_minutes,
+                kind=kind,
+                processing_status=processing_status,
+                page=page,
+                per_page=per_page,
+            )
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def get_document(
+        ctx: Context[AppContext],
+        document_id: int,
+        include_text: bool = False,
+        text_offset: int = 0,
+        max_chars: int = 20000,
+    ) -> dict[str, Any]:
+        """Get one document, optionally with a window of its extracted text.
+
+        This is how you read what a council actually said: set
+        `include_text=true` on a document with `is_minutes=true` (or any
+        document whose `extract_status` is `success`) to get the text
+        extracted from the PDF.
+
+        **Text is returned in windows, not all at once.** Extracted minutes
+        can run to hundreds of thousands of characters, so a single call
+        returns at most `max_chars` characters starting at `text_offset`.
+        The response tells you where you are: `text_length` is the size of
+        the whole text, `has_more` says whether anything follows this window,
+        and `next_offset` is where the next window starts. **While `has_more`
+        is true, call this tool again with `text_offset=next_offset`** to
+        read on. Check `text_length` first: if it is only a little more than
+        what you received, one more call finishes the document; if it is
+        enormous, consider using `search_council_data` to find the relevant
+        part instead of reading the whole thing.
+
+        Args:
+            document_id: The document's `id`, from `list_documents`, from a
+                meeting's `documents`, or from a `search_council_data` hit's
+                `document_id`.
+            include_text: When false (the default) the `text` field is
+                omitted entirely and you get metadata only, which is cheap.
+                Set it to true only when you intend to read the text.
+            text_offset: Zero-based character offset to start the window at.
+                Pass the `next_offset` from the previous call.
+            max_chars: Maximum characters in this window (default 20000).
+                Values above 50000 are silently clamped to 50000.
+
+        Returns:
+            The document record (`id`, `source_type`, `source_id`, `url`,
+            `kind`, `extract_status`, `processing_status`, `is_minutes`,
+            `is_media`, the `contains_*` flags, `created_at`). When
+            `include_text` is true it also has `text` (this window only),
+            `text_length`, `text_offset`, `has_more` and `next_offset`
+            (null once you have reached the end). When `include_text` is
+            false there is no `text` key at all. An empty `text` with
+            `text_length` 0 means extraction has not produced any text —
+            check `extract_status`.
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            document = await client.get_document(document_id, include_text)
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+        if not include_text:
+            document.pop("text", None)
+            return document
+        chunk = window(
+            document.get("text"), text_offset, min(max_chars, MAX_TEXT_CHARS)
+        )
+        return {
+            **document,
+            "text": chunk.text,
+            "text_length": chunk.text_length,
+            "text_offset": chunk.offset,
+            "has_more": chunk.has_more,
+            "next_offset": chunk.next_offset,
+        }
+
+    @server.tool()
+    async def get_document_file_url(
+        ctx: Context[AppContext], document_id: int
+    ) -> dict[str, Any]:
+        """Get a direct download URL for a document's original PDF.
+
+        **You cannot fetch this URL yourself** — return it to the user so
+        they can open it. It is a **short-lived presigned URL** (see
+        `expires_in`, typically 600 seconds), so present it immediately
+        rather than saving it for later; a stale link will simply fail.
+
+        Prefer `get_document(include_text=true)` when you want to *read* the
+        contents. Use this tool when the user wants the source PDF itself.
+
+        Not every document has a stored file: this legitimately **404s with
+        "Document has no stored file"** when the scraper has not yet
+        downloaded the PDF. Check the document's `extract_status` first — a
+        `pending` document has nothing to download yet, whereas `success`
+        means the file is there.
+
+        Args:
+            document_id: The document's `id`.
+
+        Returns:
+            `url` — the presigned download link; `filename`; `content_type`
+            (usually `application/pdf`); `byte_size`; and `expires_in`, the
+            lifetime of the link in seconds.
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.get_document_file(document_id)
         except CouncilApiError as e:
             raise ToolError(_api_error(e)) from e
