@@ -146,8 +146,9 @@ async def test_tool_is_listed_with_its_schema(fixture_client: FixtureClient) -> 
     assert schema["required"] == ["q"]
     assert properties["mode"]["enum"] == ["document", "classification"]
     assert properties["mode"]["default"] == "document"
-    assert tools[TOOL].description is not None
-    assert "not indexed" in tools[TOOL].description.lower()
+    description = tools[TOOL].description
+    assert description is not None
+    assert "not indexed" in description.lower()
 
 
 async def test_tool_returns_normalised_hits(fixture_client: FixtureClient) -> None:
