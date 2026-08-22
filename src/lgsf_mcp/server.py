@@ -25,10 +25,10 @@ Two traps, both verified against mcp 2.0.0's source rather than assumed:
 
 Tools map upstream failures onto ``ToolError``, imported from
 ``mcp.server.mcpserver.exceptions`` (it is *not* re-exported from
-``mcp.server.mcpserver``)::
+``mcp.server.mcpserver``). ``_api_error`` holds the shared wording::
 
     except CouncilApiError as e:
-        raise ToolError(f"Council Gateway API {e.status}: {e.detail}") from e
+        raise ToolError(_api_error(e)) from e
 
 The SDK wraps every exception a tool body raises as
 ``ToolError(f"Error executing tool {name}: {e}")`` and returns it as
@@ -43,6 +43,7 @@ Reference: https://py.sdk.modelcontextprotocol.io/handlers/lifespan/
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -78,6 +79,30 @@ INSTRUCTIONS = (
 
 #: Upstream 422s on a one-character query, so reject it before the round trip.
 MIN_QUERY_LENGTH = 2
+
+#: Committees are fetched eagerly by ``get_council``; 100 is the upstream cap.
+COMMITTEE_PAGE_SIZE = 100
+
+
+def _api_error(e: CouncilApiError) -> str:
+    """The single wording every tool uses for an upstream failure."""
+    return f"Council Gateway API {e.status}: {e.detail}"
+
+
+def _parse_date(name: str, value: str | None) -> datetime.date | None:
+    """Parse a model-supplied ``YYYY-MM-DD`` filter, or fail loudly.
+
+    Left to the client this would become an opaque upstream 422, which tells
+    the model nothing about which argument it got wrong.
+    """
+    if value is None:
+        return None
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError as e:
+        raise ToolError(
+            f"{name} must be a date in YYYY-MM-DD format, got {value!r}"
+        ) from e
 
 
 @dataclass
@@ -184,4 +209,170 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
                 q, council_id=council_id, mode=mode, size=size, offset=offset
             )
         except CouncilApiError as e:
-            raise ToolError(f"Council Gateway API {e.status}: {e.detail}") from e
+            raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def list_councils(
+        ctx: Context[AppContext],
+        council_type: str | None = None,
+        page: int = 1,
+        per_page: int = 25,
+    ) -> dict[str, Any]:
+        """List the UK councils covered by this dataset — the top of the data
+        model that meetings, committees, decisions, documents and people all
+        hang off.
+
+        There are roughly 440 councils (the exact count for your filter is in
+        the `total` field). **There is no name search**: to find a council by
+        name, page through with `per_page=100` and match the `name` field
+        client-side. Once you have the id, use `get_council` for its
+        committees, or `list_meetings(council_id=...)` for its meetings.
+
+        Args:
+            council_type: Restrict to one scraper family. The values seen
+                upstream are `modern_gov` and `cmis` — these are the values
+                of each council's `council_type_label` field. Omit to list
+                every council.
+            page: One-based page number.
+            per_page: Councils per page (default 25; upstream caps this at
+                100, and 100 is what you want when scanning for a name).
+
+        Returns:
+            `items` — the councils on this page, each with `id`, `name`,
+            `council_type_label`, `majority_party` and `base_scrape_url`;
+            plus `page`, `per_page` and `total` (the number of councils
+            matching the filter, across all pages).
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.list_councils(
+                council_type=council_type, page=page, per_page=per_page
+            )
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def get_council(ctx: Context[AppContext], council_id: int) -> dict[str, Any]:
+        """Get one council together with its committees.
+
+        A council's committees are the bodies that actually hold meetings,
+        so they are fetched and merged in here: you never need a second call
+        to list them. Pass a committee's `id` to
+        `list_meetings(committee_id=...)` to see what that committee has met
+        about.
+
+        Args:
+            council_id: The council's `id`, as returned by `list_councils`
+                or found on a meeting, decision or person record.
+
+        Returns:
+            The council record (`id`, `name`, `council_type_label`,
+            `majority_party`, `base_scrape_url`) plus two added fields:
+            `committees`, a list of committee records (`id`, `council_id`,
+            `name`, `url`), and `committees_total`, the total number of
+            committees upstream reports for this council. Only the first 100
+            committees are included; if `committees_total` exceeds
+            `len(committees)` the rest are not shown here.
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            council = await client.get_council(council_id)
+            committees = await client.list_council_committees(
+                council_id, per_page=COMMITTEE_PAGE_SIZE
+            )
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+        return {
+            **council,
+            "committees": committees.get("items", []),
+            "committees_total": committees.get("total", 0),
+        }
+
+    @server.tool()
+    async def list_meetings(
+        ctx: Context[AppContext],
+        council_id: int | None = None,
+        committee_id: int | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        has_minutes: bool | None = None,
+        page: int = 1,
+        per_page: int = 25,
+    ) -> dict[str, Any]:
+        """List council meetings, filtered by council, committee and/or date.
+
+        Meetings belong to a council and usually to one of its committees,
+        and are what agendas, minutes and other documents hang off. Use this
+        when you know *which* body or *when* you care about; use
+        `search_council_data` instead when you only know *what* you are
+        looking for, since meetings themselves are not full-text indexed.
+
+        Args:
+            council_id: Restrict to one council (see `list_councils`).
+            committee_id: Restrict to one committee (see `get_council`).
+            date_from: Earliest meeting date, inclusive, as `YYYY-MM-DD`.
+            date_to: Latest meeting date, inclusive, as `YYYY-MM-DD`.
+            has_minutes: When true, return only meetings that have a minutes
+                document attached — these are the meetings with extracted
+                text you can actually read. When false, only meetings
+                without one. Omit for both.
+            page: One-based page number.
+            per_page: Meetings per page (default 25; upstream caps at 100).
+
+        Returns:
+            `items` — meeting **summaries** only: `id`, `council_id`,
+            `committee_id`, `name`, `url`, `date` and `topline` (a one-line
+            LLM summary, often null). Call `get_meeting(id)` for the full
+            record with documents, decisions, attendees and the longer
+            summaries. Also `page`, `per_page` and `total`.
+        """
+        parsed_from = _parse_date("date_from", date_from)
+        parsed_to = _parse_date("date_to", date_to)
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.list_meetings(
+                council_id=council_id,
+                committee_id=committee_id,
+                date_from=parsed_from,
+                date_to=parsed_to,
+                has_minutes=has_minutes,
+                page=page,
+                per_page=per_page,
+            )
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def get_meeting(ctx: Context[AppContext], meeting_id: int) -> dict[str, Any]:
+        """Get one meeting in full, with everything attached to it.
+
+        This is the hub record: a meeting pulls together the committee that
+        held it, the papers published for it, the decisions taken at it and
+        who was there. Reach a meeting id from `list_meetings`, or from the
+        `meeting_id` on a `search_council_data` hit.
+
+        Args:
+            meeting_id: The meeting's `id`.
+
+        Returns:
+            The meeting (`id`, `council_id`, `committee_id`, `name`, `url`,
+            `date`) plus:
+
+            - `topline`, `about`, `notes` — LLM-generated summaries of the
+              meeting. Often null; when present, read these first.
+            - `committee` — the full committee record, so no extra call.
+            - `documents` — the agendas, reports and minutes published for
+              the meeting. Each has `is_minutes`: pass the `id` of a document
+              with `is_minutes=true` to `get_document(include_text=true)` to
+              read what was actually said. `extract_status` tells you whether
+              text extraction succeeded.
+            - `decisions` — decisions recorded against this meeting.
+            - `attendees` and `additional_attendees` — the councillors and
+              officers present.
+            - `tags` — topic tags for the meeting.
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.get_meeting(meeting_id)
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e

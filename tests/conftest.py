@@ -17,6 +17,7 @@ import httpx
 import pytest
 
 from lgsf_mcp.client import CouncilGatewayClient
+from lgsf_mcp.server import COMMITTEE_PAGE_SIZE
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -38,6 +39,9 @@ DOCUMENT_ID: int = IDS["document_id"]
 DECISION_ID: int = IDS["decision_id"]
 PERSON_ID: int = IDS["person_lookup_id"]
 
+#: The per_page the listing tools default to, which fixtures must serve.
+TOOL_PER_PAGE = 25
+
 
 def query(**params: object) -> Query:
     """Normalise query params the way httpx would encode them, then sort."""
@@ -51,8 +55,24 @@ def query(**params: object) -> Query:
 def _routes() -> dict[Route, tuple[int, Any]]:
     """Map (method, path, sorted query) to (status, JSON body)."""
     paging = {"page": 1, "per_page": 2}
+    # The tools default to per_page=25 and get_council fetches committees with
+    # per_page=100, so those pages are served from the same fixture bodies as
+    # the per_page=2 ones recorded by scripts/record_fixtures.py. The fixture
+    # `per_page` field therefore does not match the request; tests must not
+    # assert on it.
+    tool_paging = {"page": 1, "per_page": TOOL_PER_PAGE}
+    committee_paging = {"page": 1, "per_page": COMMITTEE_PAGE_SIZE}
     routes: dict[Route, tuple[int, Any]] = {
         ("GET", "/councils", query(**paging)): (200, load_fixture("councils")),
+        ("GET", "/councils", query(**tool_paging)): (200, load_fixture("councils")),
+        ("GET", f"/councils/{COUNCIL_ID}/committees", query(**committee_paging)): (
+            200,
+            load_fixture("council_226_committees"),
+        ),
+        ("GET", "/meetings", query(council_id=COUNCIL_ID, **tool_paging)): (
+            200,
+            load_fixture("meetings_council_226"),
+        ),
         ("GET", f"/councils/{COUNCIL_ID}", ()): (200, load_fixture("council_226")),
         ("GET", f"/councils/{COUNCIL_ID}/committees", query(**paging)): (
             200,
