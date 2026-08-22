@@ -66,6 +66,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
+from .auth import StaticTokenVerifier, auth_settings
 from .client import CouncilApiError, CouncilGatewayClient
 from .search import SearchBackend, SearchMode, TextSearchBackend
 from .text import window
@@ -105,6 +106,16 @@ FETCH_TEXT_CHARS = 20_000
 
 #: Hits ChatGPT's ``search`` asks for in one go; it has no paging either.
 FETCH_SEARCH_SIZE = 20
+
+#: Bind address and port the CLI serves ``--transport streamable-http`` on.
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
+
+#: Origin advertised in the OAuth resource metadata when the operator does not
+#: override it. Correct for a local server; behind a Tailscale Funnel the
+#: ``https://….ts.net`` URL must be passed explicitly, or clients are told to
+#: talk to a loopback address they cannot reach.
+DEFAULT_PUBLIC_URL = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}"
 
 #: The ``<Type>-<int>`` ids that upstream search emits and ``fetch`` accepts.
 _FETCH_ID = re.compile(r"\A(?P<kind>[A-Za-z]+)-(?P<id>\d+)\Z")
@@ -192,13 +203,30 @@ class AppContext:
     search: SearchBackend
 
 
-def create_server(client: CouncilGatewayClient | None = None) -> MCPServer[AppContext]:
+def create_server(
+    client: CouncilGatewayClient | None = None,
+    *,
+    token: str | None = None,
+    public_url: str | None = None,
+) -> MCPServer[AppContext]:
     """Build the lgsf-mcp server.
 
     An injected ``client`` (tests) is used as-is and left open for the caller
     to close; otherwise the lifespan owns a ``from_env()`` client and closes it
     on shutdown.
+
+    Passing ``token`` requires every HTTP request to carry
+    ``Authorization: Bearer <token>``; ``public_url`` is the externally
+    reachable origin advertised in the resource metadata and defaults to
+    ``http://127.0.0.1:8000``. Without ``token`` the server is unauthenticated.
+    See :mod:`lgsf_mcp.auth` — notably, this has no effect on stdio.
     """
+    auth_kwargs: dict[str, Any] = {}
+    if token is not None:
+        auth_kwargs = {
+            "token_verifier": StaticTokenVerifier(token),
+            "auth": auth_settings(public_url or DEFAULT_PUBLIC_URL),
+        }
 
     @asynccontextmanager
     async def lifespan(_server: MCPServer[AppContext]) -> AsyncIterator[AppContext]:
@@ -215,6 +243,7 @@ def create_server(client: CouncilGatewayClient | None = None) -> MCPServer[AppCo
         SERVER_NAME,
         instructions=INSTRUCTIONS,
         lifespan=lifespan,
+        **auth_kwargs,
     )
     _register_tools(server)
     return server
