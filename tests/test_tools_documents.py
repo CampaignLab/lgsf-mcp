@@ -96,6 +96,7 @@ async def test_document_tools_are_listed_with_their_parameters(
                 "next_offset",
                 "text_length",
                 "clamped to 50000",
+                "omits the `name` key",
             ],
         ),
         (

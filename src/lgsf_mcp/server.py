@@ -576,7 +576,10 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
             (null once you have reached the end). When `include_text` is
             false there is no `text` key at all. An empty `text` with
             `text_length` 0 means extraction has not produced any text —
-            check `extract_status`.
+            check `extract_status`. Note this record **omits the `name` key
+            entirely**, whereas `list_documents` items and search hits carry
+            `name` (usually null); do not treat its absence here as a
+            difference in the document.
         """
         client = ctx.request_context.lifespan_context.client
         try:
@@ -733,37 +736,55 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
         page: int = 1,
         per_page: int = 25,
     ) -> dict[str, Any]:
-        """List councillors and officers.
+        """List councillors. The dataset is populated — about 19700 people
+        across all councils, every one of them a councillor.
 
-        **This dataset is not populated yet: upstream currently returns no
-        people at all**, for every council and every filter, and
-        `total` is 0. An empty result therefore means "these records have
-        not been scraped yet", **not** "this council has no councillors" —
-        never tell the user a council has no councillors on the strength of
-        this tool. To find who attended a particular meeting, use
-        `get_meeting`, whose `attendees` and `additional_attendees` are
-        populated, or read the minutes document.
+        **`party` is unnormalised free text and is matched exactly**, so a
+        single filter value always under-counts. One page of 100 records
+        contained `Conservative`, `Conservative Party`, `The Conservative
+        Party` and `Local Conservatives`; `Labour`, `Labour Party` and
+        `Labour and Co-operative Party`; `Liberal Democrat`, `Liberal
+        Democrats` and `(Liberal Democrats)`. `party=Conservative` matches
+        3089 people, but that is **not** the number of Conservative
+        councillors — never report a filtered `total` as a party's true
+        count. To count or gather a party, page through the unfiltered
+        results (`per_page=100`) and group the `party` values yourself.
 
-        **People are not full-text searchable** either; `search_council_data`
-        indexes document text and document classifications only.
+        **`is_councillor=false` currently matches nothing** — there are no
+        officers in the dataset, and `is_councillor=true` returns exactly
+        the same people as no filter at all, so the flag is not worth
+        setting. Do not conclude from an empty officer result that a council
+        employs no officers.
+
+        Do not confuse `party` here with the short codes (`CON`, `NOC`) used
+        by the unrelated `majority_party` field on **council** records; those
+        codes match no person.
+
+        **People are not full-text searchable**; `search_council_data`
+        indexes document text and document classifications only. For who
+        attended a particular meeting, use `get_meeting`, whose `attendees`
+        and `additional_attendees` are populated, or read the minutes.
 
         Args:
             council_id: Restrict to one council (see `list_councils`).
             is_councillor: When true, only elected councillors; when false,
-                only non-councillors (officers). Omit for both.
-            party: Match the party exactly as stored upstream. The API does
-                no normalisation, and because no people are stored the real
-                vocabulary is unknown; the related `majority_party` field on
-                councils uses short codes such as `CON` and `NOC`, so those
-                are the shape to expect.
+                only non-councillors (officers) — which currently matches
+                nothing. Omit for both.
+            party: Match the party exactly as stored upstream, e.g.
+                `Conservative` or `Scottish National Party`. No
+                normalisation, no substring matching, and the vocabulary is
+                inconsistent — see the warning above.
             page: One-based page number.
             per_page: People per page (default 25; upstream caps at 100).
 
         Returns:
             `items` — the people on this page, each with `id`, `council_id`,
-            `name`, `role`, `party` and `is_councillor`; plus `page`,
-            `per_page` and `total`. In practice `items` is `[]` and `total`
-            is 0 — see the caveat above.
+            `name` (including the honorific, e.g. "Councillor Alexander
+            McLellan"), `role`, `party` (sometimes null), `is_councillor`,
+            `modern_gov_id` and `ocd_id` (both null throughout); plus `page`,
+            `per_page` and `total`. `role` has the form
+            `"Councillor, <ward>"` — **the ward is embedded in `role`**;
+            there is no separate ward field.
         """
         client = ctx.request_context.lifespan_context.client
         try:
@@ -779,23 +800,26 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
 
     @server.tool()
     async def get_person(ctx: Context[AppContext], person_id: int) -> dict[str, Any]:
-        """Get one councillor or officer by id.
+        """Get one councillor by id.
 
-        **This dataset is not populated yet: upstream currently holds no
-        people at all**, so every id 404s with "Person not found". That is
-        the state of the scrape, not evidence that a particular person does
-        not exist or does not hold office — do not report it as such. Use
-        `get_meeting` (its `attendees` and `additional_attendees`) or the
-        minutes documents to find out who is involved in a council's
-        business.
+        Ids come from `list_people`; there is no lookup by name, so find the
+        person there first. An unknown id 404s with "Person not found",
+        which means that id is not in the dataset — it is **not** evidence
+        that the person does not exist or does not hold office. The dataset
+        is councillors only, so anyone who is not an elected member (council
+        officers, for instance) will simply be absent; use `get_meeting`
+        (its `attendees` and `additional_attendees`) or the minutes
+        documents to find them.
 
         Args:
-            person_id: The person's `id`, which would come from
-                `list_people`.
+            person_id: The person's `id`, from `list_people`.
 
         Returns:
-            The person record (`id`, `council_id`, `name`, `role`, `party`,
-            `is_councillor`) once the dataset is populated.
+            The person record: `id`, `council_id`, `name` (including the
+            honorific), `role` (of the form `"Councillor, <ward>"`, which is
+            where the ward is recorded), `party` (unnormalised free text,
+            sometimes null), `is_councillor`, `modern_gov_id` and `ocd_id`
+            (both null throughout).
         """
         client = ctx.request_context.lifespan_context.client
         try:

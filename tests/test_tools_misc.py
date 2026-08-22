@@ -5,7 +5,9 @@ the generated schemas and the error surface are what a model would see.
 
 The people tools are exercised against the recorded fixtures, which now hold
 real councillor records: ``/people`` returns a populated page and
-``/people/{id}`` resolves.
+``/people/{id}`` resolves. The description assertions guard the upstream
+quirks a model cannot infer — chiefly that ``party`` is unnormalised free
+text matched exactly, so a filtered ``total`` is not a party's real count.
 """
 
 from typing import Any
@@ -100,21 +102,27 @@ async def test_decision_and_people_tools_are_listed_with_their_parameters(
         (
             "list_people",
             [
-                "not populated yet",
-                "upstream currently returns no people at all",
-                'not** "this council has no councillors"',
+                "unnormalised free text",
+                "matched exactly",
+                "under-counts",
+                "Conservative Party",
+                "Liberal Democrats",
+                "is_councillor=false` currently matches nothing",
+                "no officers in the dataset",
                 "not full-text searchable",
-                "is_councillor",
                 "party",
                 "role",
-                "CON",
-                "NOC",
                 "attendees",
             ],
         ),
         (
             "get_person",
-            ["not populated yet", "Person not found", "attendees", "is_councillor"],
+            [
+                "Person not found",
+                "councillors only",
+                "attendees",
+                "is_councillor",
+            ],
         ),
     ],
 )
@@ -130,6 +138,30 @@ async def test_descriptions_state_the_required_facts(
     flattened = " ".join(description.split())
     missing = [phrase for phrase in phrases if phrase not in flattened]
     assert missing == []
+
+
+#: Wording from when ``/people`` was empty. It has since been populated, so a
+#: description claiming otherwise would actively mislead the model.
+STALE_EMPTY_DATASET_PHRASES = [
+    "not populated yet",
+    "no people at all",
+    "has no councillors",
+    "once the dataset is populated",
+]
+
+
+@pytest.mark.parametrize("tool", ["list_people", "get_person"])
+async def test_people_descriptions_no_longer_claim_the_dataset_is_empty(
+    fixture_client: FixtureClient, tool: str
+) -> None:
+    async with Client(create_server(fixture_client)) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    description = tools[tool].description
+    assert description is not None
+    flattened = " ".join(description.split())
+    stale = [phrase for phrase in STALE_EMPTY_DATASET_PHRASES if phrase in flattened]
+    assert stale == []
 
 
 # -- list_decisions --------------------------------------------------------
