@@ -62,14 +62,38 @@ async def test_tools_are_listed_with_their_parameters(
 @pytest.mark.parametrize(
     ("tool", "phrases"),
     [
-        ("list_councils", ["320", "modern_gov", "cmis", "council_type_label",
-                           "per_page=100", "items", "total"]),
+        (
+            "list_councils",
+            [
+                "320",
+                "modern_gov",
+                "cmis",
+                "council_type_label",
+                "per_page=100",
+                "items",
+                "total",
+            ],
+        ),
         ("get_council", ["committees", "never need a second call"]),
-        ("list_meetings", ["summaries", "topline", "get_meeting",
-                           "has_minutes", "minutes"]),
-        ("get_meeting", ["decisions", "documents", "attendees", "tags",
-                         "committee", "topline", "about", "notes",
-                         "is_minutes", "get_document"]),
+        (
+            "list_meetings",
+            ["summaries", "topline", "get_meeting", "has_minutes", "minutes"],
+        ),
+        (
+            "get_meeting",
+            [
+                "decisions",
+                "documents",
+                "attendees",
+                "tags",
+                "committee",
+                "topline",
+                "about",
+                "notes",
+                "is_minutes",
+                "get_document",
+            ],
+        ),
     ],
 )
 async def test_descriptions_state_the_required_facts(

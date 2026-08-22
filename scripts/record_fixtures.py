@@ -137,9 +137,7 @@ async def usable_document(client: CouncilGatewayClient, document_id: int) -> boo
         if exc.status == 404:
             return False
         raise
-    with_text = await retry(
-        lambda: client.get_document(document_id, include_text=True)
-    )
+    with_text = await retry(lambda: client.get_document(document_id, include_text=True))
     return bool(with_text.get("text"))
 
 
@@ -259,15 +257,11 @@ async def record() -> None:
         else:
             write("person", await retry(lambda: client.get_person(person_id)))
 
-        write(
-            "search_housing", await retry(lambda: client.search("housing", size=2))
-        )
+        write("search_housing", await retry(lambda: client.search("housing", size=2)))
 
         write(
             "validation_422",
-            await error_detail(
-                lambda: client.list_councils(per_page=1000), expect=422
-            ),
+            await error_detail(lambda: client.list_councils(per_page=1000), expect=422),
         )
 
     write("ids", ids)

@@ -139,9 +139,7 @@ class CouncilGatewayClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _get(
-        self, path: str, params: Mapping[str, object] | None = None
-    ) -> Any:
+    async def _get(self, path: str, params: Mapping[str, object] | None = None) -> Any:
         response = await self._client.get(path, params=_clean_params(params))
         if not response.is_success:
             try:
