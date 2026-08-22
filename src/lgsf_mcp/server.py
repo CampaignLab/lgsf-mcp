@@ -60,6 +60,7 @@ import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from mcp.server import MCPServer
@@ -72,6 +73,19 @@ from .search import SearchBackend, SearchMode, TextSearchBackend
 from .text import window
 
 SERVER_NAME = "lgsf-mcp"
+
+#: Advertised when the distribution is not installed (a bare source checkout),
+#: so importing this module never fails just because metadata is missing.
+UNKNOWN_VERSION = "0.0.0+unknown"
+
+
+def _server_version() -> str:
+    """Version reported in the MCP ``initialize`` handshake."""
+    try:
+        return version(SERVER_NAME)
+    except PackageNotFoundError:
+        return UNKNOWN_VERSION
+
 
 INSTRUCTIONS = (
     "UK local-government data scraped from council websites (currently "
@@ -241,6 +255,7 @@ def create_server(
 
     server = MCPServer(
         SERVER_NAME,
+        version=_server_version(),
         instructions=INSTRUCTIONS,
         lifespan=lifespan,
         **auth_kwargs,
