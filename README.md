@@ -32,9 +32,11 @@ council websites (ModernGov; ~80% of councils)
   lgsf-mcp (this repo)  ──  MCP tools  ──▶  Claude / other MCP clients
 ```
 
-Relationship to Democracy Club's LGSF is not yet confirmed: `council-api`'s
-README names `council-scraper` as its data source, and `council-scraper`
-contains no reference to LGSF.
+`council-scraper` is Poteris's older scraper; Democracy Club's LGSF is
+superseding it. Today the API serves `council-scraper` data, so that is what
+this MCP server talks to; expect the upstream source to switch to LGSF
+output over time, and keep this server's coupling to the API (not the
+scraper schema) so that change stays upstream.
 
 ## Resources
 
@@ -42,10 +44,10 @@ contains no reference to LGSF.
 | --- | --- | --- |
 | Council Gateway API | <https://councilgateway.poteris.co.uk/council-api> | Read-only REST API. Bearer auth is a static `API_TOKENS` list; the live instance runs with `auth_disabled`, so no token is needed today. |
 | council-api source | <https://github.com/poteris/council-api> | FastAPI over the scraper's Postgres + OpenSearch. Deployed on Render (Frankfurt). `app/models.py` mirrors the scraper schema. |
-| council-scraper source | <https://github.com/poteris/council-scraper> | Rails/Sidekiq scraper of ModernGov sites; owns the schema. ~1.59M documents in production. |
+| council-scraper source | <https://github.com/poteris/council-scraper> | Poteris's older Rails/Sidekiq scraper of ModernGov sites; owns the current schema. ~1.59M documents in production. Being superseded by LGSF. |
 | OpenAPI spec | <https://councilgateway.poteris.co.uk/council-api/openapi.json> | OpenAPI 3.1. 15 `GET` endpoints. No descriptions in spec. |
 | Council Gateway dashboard | <https://councilgateway.poteris.co.uk/> | Alpha web UI over the same data. Source repo not publicly identified (not `council-api`, which is API-only). |
-| LGSF | <https://github.com/DemocracyClub/LGSF> | Democracy Club's scraper framework. One package per council (~440). Scrapes councillors, minutes, decisions. Alpha/unstable. |
+| LGSF | <https://github.com/DemocracyClub/LGSF> | Democracy Club's scraper framework, superseding `council-scraper`. One package per council (~440). Scrapes councillors, minutes, decisions. Alpha/unstable. |
 | lgsf-dashboard | <https://github.com/DemocracyClub/lgsf-dashboard> | Eleventy static site showing LGSF scraper run logbooks (pass/fail per council). Not the Council Gateway UI. |
 | Democracy Club Slack | <https://slack.democracyclub.org.uk/> | Recommended by LGSF README for anyone using the data. |
 
