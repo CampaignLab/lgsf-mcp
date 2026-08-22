@@ -118,7 +118,7 @@ detail.
 - Unit tests via `httpx.MockTransport`.
 - Opt-in live smoke tests (`LGSF_LIVE=1`).
 - `.mcp.json` snippet in README for Claude Code; `uv run lgsf-mcp` entry point.
-- `uv run lgsf-mcp --transport http --port 8000` binds `127.0.0.1:8000`;
+- `uv run lgsf-mcp --transport streamable-http --port 8000` binds `127.0.0.1:8000`;
   expose with `tailscale funnel 8000` and add the `.ts.net` URL as a custom
   connector in Claude.ai and ChatGPT. Prereqs: MagicDNS, HTTPS certs, `funnel`
   nodeAttr in tailnet policy; Funnel allows ports 443/8443/10000 only.
