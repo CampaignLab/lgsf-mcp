@@ -27,10 +27,11 @@ Use the `beads-solo` skill for Beads setup and maintainer policy in this
 repository. Use the `beads` skill for the standard Beads workflow.
 
 This repository opts into the Beads **team-maintainer** profile for issue
-management and commits. Unless a current user or orchestrator instruction
-says otherwise, agents may manage issues and make atomic commits as work
-progresses. They must not push Git branches or sync or push Dolt state
-unless explicitly requested.
+management, commits, and pushes. Unless a current user or orchestrator
+instruction says otherwise, agents may manage issues and make atomic commits
+as work progresses, and may push Git branches and Dolt state as part of
+session close (see *Session Completion* below). A current "do not push"
+instruction still wins.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:1105d646 -->
 ## Beads Issue Tracker
