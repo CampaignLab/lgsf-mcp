@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "id": 10130,
+      "council_id": 226,
+      "name": "Aberdeen City Region Deal Joint Committee",
+      "url": null,
+      "modern_gov_id": null
+    },
+    {
+      "id": 3295,
+      "council_id": 226,
+      "name": "Adjourned meeting, Council",
+      "url": null,
+      "modern_gov_id": null
+    }
+  ],
+  "page": 1,
+  "per_page": 2,
+  "total": 46
+}

@@ -1,0 +1,82 @@
+{
+  "total": 10000,
+  "mode": "document",
+  "hits": [
+    {
+      "id": "Document-1432934",
+      "score": 5.108002,
+      "source": {
+        "id": 1432934,
+        "name": null,
+        "type": "Document",
+        "meeting_id": 120138,
+        "meeting_name": "Housing Overview and Scrutiny Committee (formerly Housing Review Board) - Thursday, 30th April, 2026 10.00 am",
+        "organisation_ids": [
+          42
+        ]
+      },
+      "highlight": {
+        "meeting_name": [
+          "<strong>Housing</strong> Overview and Scrutiny Committee (formerly <strong>Housing</strong> Review Board) - Thursday, 30th April, 2026 10.00 am"
+        ],
+        "text": [
+          "Agenda for <strong>Housing</strong> Review Board\nThursday, 30th April, 2026, 10.00 am\nMembers of <strong>Housing</strong> Review Board\nS Forde, T Wang, R Dale, R Browne, C Burhop, S Chamberlain           East Devon District Council\n(Chair), M Martin, S Smith (Vice-Chair), S Clake, R Robinson,                Blackdown House\nT Dumper,"
+        ]
+      },
+      "record": {
+        "id": 1432934,
+        "source_type": "Meeting",
+        "source_id": 120138,
+        "name": null,
+        "url": "https://democracy.eastdevon.gov.uk/documents/g2550/Agenda+frontsheet+30th-Apr-2026+10.00+Housing+Overview+and+Scrutiny+Committee+formerly+Housing+Re.pdf?T=0",
+        "kind": "unclassified",
+        "extract_status": "success",
+        "processing_status": "waiting",
+        "contains_agenda": false,
+        "contains_attendees": false,
+        "contains_decisions": false,
+        "is_minutes": false,
+        "is_media": false,
+        "created_at": "2026-05-18T04:56:54.662615"
+      }
+    },
+    {
+      "id": "Document-1432930",
+      "score": 5.0703273,
+      "source": {
+        "id": 1432930,
+        "name": null,
+        "type": "Document",
+        "meeting_id": 120138,
+        "meeting_name": "Housing Overview and Scrutiny Committee (formerly Housing Review Board) - Thursday, 30th April, 2026 10.00 am",
+        "organisation_ids": [
+          42
+        ]
+      },
+      "highlight": {
+        "meeting_name": [
+          "<strong>Housing</strong> Overview and Scrutiny Committee (formerly <strong>Housing</strong> Review Board) - Thursday, 30th April, 2026 10.00 am"
+        ],
+        "text": [
+          "<strong>Housing</strong> Review Board 30 April 2026\n108    <strong>Housing</strong> complaints - performance report 2025-26 (Q4)\n       The <strong>Housing</strong> Performance Lead\u2019s report provided the Board with details on <strong>housing</strong>\n       related complaints performance, and details of the ongoing complaints improvement\n       action plan and the breakdown"
+        ]
+      },
+      "record": {
+        "id": 1432930,
+        "source_type": "Meeting",
+        "source_id": 120138,
+        "name": null,
+        "url": "https://democracy.eastdevon.gov.uk/documents/g2550/Printed+minutes+30th-Apr-2026+10.00+Housing+Overview+and+Scrutiny+Committee+formerly+Housing+Revi.pdf?T=1",
+        "kind": "unclassified",
+        "extract_status": "success",
+        "processing_status": "waiting",
+        "contains_agenda": false,
+        "contains_attendees": false,
+        "contains_decisions": false,
+        "is_minutes": false,
+        "is_media": false,
+        "created_at": "2026-05-18T04:56:03.329957"
+      }
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "items": [
+    {
+      "id": 84747,
+      "council_id": 301,
+      "url": "http://moderngov.torfaen.gov.uk/ieDecisionDetails.aspx?ID=7709",
+      "decision_maker": "Deputy Chief Executive (Resources)",
+      "outcome": "Recommendations Approved",
+      "is_key": true,
+      "is_callable_in": false,
+      "purpose": null,
+      "content": "",
+      "date": "2028-06-27",
+      "topline": "The Deputy Chief Executive (Resources) has decided to approve recommendations."
+    },
+    {
+      "id": 170703,
+      "council_id": 169,
+      "url": "https://barnet.moderngov.co.uk/ieDecisionDetails.aspx?ID=9845",
+      "decision_maker": "Executive Director of Children's Services",
+      "outcome": "Recommendations Approved",
+      "is_key": false,
+      "is_callable_in": false,
+      "purpose": null,
+      "content": "To award the contract for the provision of\r\nhired transport service for children and adults and approve the\r\nupdated list of providers for 2024/2025 & 2025&2026 shown\r\nin section 9.",
+      "date": "2026-12-10",
+      "topline": "The Executive Director of Children's Services has decided to award a contract for hired transport services for children and adults."
+    }
+  ],
+  "page": 1,
+  "per_page": 2,
+  "total": 179198
+}

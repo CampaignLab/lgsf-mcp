@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "id": 130462,
+      "council_id": 226,
+      "committee_id": 3146,
+      "name": "Local Review Body of Aberdeen City Council - Monday, 10th August, 2026 11.00 am",
+      "url": "https://aberdeen.moderngov.co.uk/ieListDocuments.aspx?CId=284&MId=10274",
+      "date": "2026-08-10T00:00:00",
+      "topline": null
+    },
+    {
+      "id": 116785,
+      "council_id": 226,
+      "committee_id": 3152,
+      "name": "Net Zero, Environment and Transport Committee - Wednesday, 25th March, 2026 10.00 am",
+      "url": "https://committees.aberdeencity.gov.uk/ieListDocuments.aspx?CId=685&MId=9952",
+      "date": "2026-03-25T00:00:00",
+      "topline": null
+    }
+  ],
+  "page": 1,
+  "per_page": 2,
+  "total": 267
+}

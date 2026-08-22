@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": 1547370,
+      "source_type": "Meeting",
+      "source_id": 130462,
+      "name": null,
+      "url": "https://aberdeen.moderngov.co.uk/documents/g10274/Public+reports+pack+10th-Aug-2026+11.00+Local+Review+Body+of+Aberdeen+City+Council.pdf?T=10",
+      "kind": "unclassified",
+      "extract_status": "pending",
+      "processing_status": "waiting",
+      "contains_agenda": false,
+      "contains_attendees": false,
+      "contains_decisions": false,
+      "is_minutes": false,
+      "is_media": false,
+      "created_at": "2026-08-13T13:57:38.373740"
+    },
+    {
+      "id": 1547369,
+      "source_type": "Meeting",
+      "source_id": 130462,
+      "name": null,
+      "url": "https://aberdeen.moderngov.co.uk/documents/g10274/Agenda+frontsheet+10th-Aug-2026+11.00+Local+Review+Body+of+Aberdeen+City+Council.pdf?T=0",
+      "kind": "unclassified",
+      "extract_status": "success",
+      "processing_status": "waiting",
+      "contains_agenda": false,
+      "contains_attendees": false,
+      "contains_decisions": false,
+      "is_minutes": false,
+      "is_media": false,
+      "created_at": "2026-08-13T13:57:24.911992"
+    }
+  ],
+  "page": 1,
+  "per_page": 2,
+  "total": 2
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "type": "less_than_equal",
+    "loc": [
+      "query",
+      "per_page"
+    ],
+    "msg": "Input should be less than or equal to 100",
+    "input": "1000",
+    "ctx": {
+      "le": 100
+    }
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "council_id": 226,
+  "note": "Ids used when these fixtures were recorded. The document is the first one of the chosen meeting that has both extracted text and a stored file; unprocessed documents 404 on /file.",
+  "meeting_id": 130462,
+  "meeting_is_first_listed": true,
+  "document_id": 1547369,
+  "document_is_first_listed": false,
+  "decision_id": 84747,
+  "person_id": null,
+  "person_available": false,
+  "person_lookup_id": 1
+}

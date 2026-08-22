@@ -1,0 +1,9 @@
+{
+  "id": 226,
+  "name": "Aberdeen City",
+  "external_id": "295",
+  "majority_party": "NOC",
+  "council_type": 0,
+  "council_type_label": "modern_gov",
+  "base_scrape_url": "https://committees.aberdeencity.gov.uk/mgCalendarMonthView.aspx"
+}

@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "id": 226,
+      "name": "Aberdeen City",
+      "external_id": "295",
+      "majority_party": "NOC",
+      "council_type": 0,
+      "council_type_label": "modern_gov",
+      "base_scrape_url": "https://committees.aberdeencity.gov.uk/mgCalendarMonthView.aspx"
+    },
+    {
+      "id": 227,
+      "name": "Aberdeenshire",
+      "external_id": "296",
+      "majority_party": "NOC",
+      "council_type": 0,
+      "council_type_label": "modern_gov",
+      "base_scrape_url": "https://aberdeenshire.moderngov.co.uk/mgCalendarMonthView.aspx"
+    }
+  ],
+  "page": 1,
+  "per_page": 2,
+  "total": 320
+}
