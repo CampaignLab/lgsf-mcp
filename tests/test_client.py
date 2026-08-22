@@ -229,3 +229,21 @@ async def test_base_url_trailing_slash_is_stripped(
     assert str(transport.last_request.url).startswith(
         "https://example.test/council-api/councils?"
     )
+
+
+# -- Lifecycle -------------------------------------------------------------
+
+
+async def test_is_closed_tracks_aclose(transport: FixtureTransport) -> None:
+    client = FixtureClient(transport)
+    assert not client.is_closed
+    await client.aclose()
+    assert client.is_closed
+
+
+async def test_is_closed_after_context_manager_exit(
+    transport: FixtureTransport,
+) -> None:
+    async with FixtureClient(transport) as client:
+        assert not client.is_closed
+    assert client.is_closed

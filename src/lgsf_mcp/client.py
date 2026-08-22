@@ -80,6 +80,11 @@ class CouncilGatewayClient:
             token=os.environ.get("COUNCIL_API_TOKEN"),
         )
 
+    @property
+    def is_closed(self) -> bool:
+        """True once aclose() has run; the underlying httpx client is unusable."""
+        return self._client.is_closed
+
     async def __aenter__(self) -> Self:
         await self._client.__aenter__()
         return self

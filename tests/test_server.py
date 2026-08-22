@@ -37,4 +37,4 @@ async def test_injected_client_is_not_closed(
 ) -> None:
     async with Client(create_server(stub_client)) as client:
         await client.list_tools()
-    assert not stub_client._client.is_closed
+    assert not stub_client.is_closed
