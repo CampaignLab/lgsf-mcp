@@ -222,8 +222,9 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
         model that meetings, committees, decisions, documents and people all
         hang off.
 
-        There are roughly 440 councils (the exact count for your filter is in
-        the `total` field). **There is no name search**: to find a council by
+        Upstream currently holds about 320 councils (the exact count for your
+        filter is in the `total` field; not every UK council is covered
+        yet). **There is no name search**: to find a council by
         name, page through with `per_page=100` and match the `name` field
         client-side. Once you have the id, use `get_council` for its
         committees, or `list_meetings(council_id=...)` for its meetings.

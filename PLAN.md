@@ -72,7 +72,7 @@ explains the data model, since the upstream spec has none.
 | `search_council_data` | `/search` | `q`, `council_id?`, `mode=document\|classification`, `size`, `offset` | Primary entry point for Claude. Returns hits with highlights and `record`. Description tells the model to follow up with `get_document` / `get_meeting`. |
 | `search` | `/search` | `query` | ChatGPT-shaped alias: returns `{results: [{id, title, url}]}`. `id` is the upstream hit id (e.g. `Document-1432934`). |
 | `fetch` | `/documents/{id}` or `/meetings/{id}` by id prefix | `id` | ChatGPT-shaped alias: returns `{id, title, text, url, metadata}`. Text is windowed like `get_document`. |
-| `list_councils` | `/councils` | `council_type?`, `page`, `per_page` | ~440 councils; description says to page or to search by name client-side. |
+| `list_councils` | `/councils` | `council_type?`, `page`, `per_page` | ~320 councils upstream today (LGSF's ~440 scrapers are a different figure); no name search, so page and match client-side. |
 | `get_council` | `/councils/{id}` + `/councils/{id}/committees` | `council_id` | Merges committees into response — saves a round trip. |
 | `list_meetings` | `/meetings` | `council_id?`, `committee_id?`, `date_from?`, `date_to?`, `has_minutes?`, `page`, `per_page` | Dates ISO `YYYY-MM-DD`. |
 | `get_meeting` | `/meetings/{id}` | `meeting_id` | Already embeds decisions, documents, attendees, tags. |

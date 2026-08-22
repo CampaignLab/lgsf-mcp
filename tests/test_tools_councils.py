@@ -62,7 +62,7 @@ async def test_tools_are_listed_with_their_parameters(
 @pytest.mark.parametrize(
     ("tool", "phrases"),
     [
-        ("list_councils", ["440", "modern_gov", "cmis", "council_type_label",
+        ("list_councils", ["320", "modern_gov", "cmis", "council_type_label",
                            "per_page=100", "items", "total"]),
         ("get_council", ["committees", "never need a second call"]),
         ("list_meetings", ["summaries", "topline", "get_meeting",
