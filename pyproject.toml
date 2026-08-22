@@ -37,4 +37,4 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
 strict = true
-packages = ["lgsf_mcp"]
+files = ["src", "tests", "scripts"]
