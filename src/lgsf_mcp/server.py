@@ -556,3 +556,174 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
             return await client.get_document_file(document_id)
         except CouncilApiError as e:
             raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def list_decisions(
+        ctx: Context[AppContext],
+        council_id: int | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        is_key: bool | None = None,
+        page: int = 1,
+        per_page: int = 25,
+    ) -> dict[str, Any]:
+        """List officer and delegated decisions taken outside of meetings.
+
+        A decision is a single act by a named decision maker — a director,
+        a cabinet member, an officer under delegated powers — recorded with
+        what was decided and why. Decisions taken *at* a meeting also appear
+        in that meeting's `decisions` list (see `get_meeting`).
+
+        **Decisions are not full-text searchable.** `search_council_data`
+        indexes document text and document classifications only, so the only
+        ways to reach a decision are the filters below, the `decisions` on a
+        meeting, or a document whose `source_type` is `Decision` (its
+        `source_id` is the decision's `id`).
+
+        Args:
+            council_id: Restrict to one council (see `list_councils`).
+            date_from: Earliest decision date, inclusive, as `YYYY-MM-DD`.
+            date_to: Latest decision date, inclusive, as `YYYY-MM-DD`.
+                Note that upstream dates are sometimes in the future or
+                otherwise implausible, so do not assume a tight date filter
+                excludes everything odd.
+            is_key: When true, only **key decisions** — the ones with
+                significant financial or community impact, which carry extra
+                publication and call-in requirements. When false, only
+                non-key decisions. Omit for both.
+            page: One-based page number.
+            per_page: Decisions per page (default 25; upstream caps at 100).
+
+        Returns:
+            `items` — the decisions on this page, each with `id`,
+            `council_id`, `url` (the council's own decision page),
+            `decision_maker` (the person or post that decided),
+            `outcome` (e.g. `Recommendations Approved`), `is_key`,
+            `is_callable_in` (whether the decision can still be called in for
+            scrutiny), `purpose`, `content` (the body text, often empty),
+            `date` and `topline` (a one-line LLM summary). Plus `page`,
+            `per_page` and `total`. Call `get_decision(id)` for the same
+            record with its documents attached.
+        """
+        parsed_from = _parse_date("date_from", date_from)
+        parsed_to = _parse_date("date_to", date_to)
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.list_decisions(
+                council_id=council_id,
+                date_from=parsed_from,
+                date_to=parsed_to,
+                is_key=is_key,
+                page=page,
+                per_page=per_page,
+            )
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def get_decision(
+        ctx: Context[AppContext], decision_id: int
+    ) -> dict[str, Any]:
+        """Get one officer or delegated decision, with its papers attached.
+
+        Reach a decision id from `list_decisions`, from a meeting's
+        `decisions` (see `get_meeting`), or from the `source_id` of a
+        document whose `source_type` is `Decision`.
+
+        Args:
+            decision_id: The decision's `id`.
+
+        Returns:
+            The decision record (`id`, `council_id`, `url`, `decision_maker`,
+            `outcome`, `is_key`, `is_callable_in`, `purpose`, `content`,
+            `date`, `topline`) plus `documents` — the reports published for
+            the decision. Pass a document's `id` to
+            `get_document(include_text=true)` to read it, or to
+            `get_document_file_url` for the original PDF. `documents` is
+            often empty, in which case `content` and `topline` are all there
+            is.
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.get_decision(decision_id)
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def list_people(
+        ctx: Context[AppContext],
+        council_id: int | None = None,
+        is_councillor: bool | None = None,
+        party: str | None = None,
+        page: int = 1,
+        per_page: int = 25,
+    ) -> dict[str, Any]:
+        """List councillors and officers.
+
+        **This dataset is not populated yet: upstream currently returns no
+        people at all**, for every council and every filter, and
+        `total` is 0. An empty result therefore means "these records have
+        not been scraped yet", **not** "this council has no councillors" —
+        never tell the user a council has no councillors on the strength of
+        this tool. To find who attended a particular meeting, use
+        `get_meeting`, whose `attendees` and `additional_attendees` are
+        populated, or read the minutes document.
+
+        **People are not full-text searchable** either; `search_council_data`
+        indexes document text and document classifications only.
+
+        Args:
+            council_id: Restrict to one council (see `list_councils`).
+            is_councillor: When true, only elected councillors; when false,
+                only non-councillors (officers). Omit for both.
+            party: Match the party exactly as stored upstream. The API does
+                no normalisation, and because no people are stored the real
+                vocabulary is unknown; the related `majority_party` field on
+                councils uses short codes such as `CON` and `NOC`, so those
+                are the shape to expect.
+            page: One-based page number.
+            per_page: People per page (default 25; upstream caps at 100).
+
+        Returns:
+            `items` — the people on this page, each with `id`, `council_id`,
+            `name`, `role`, `party` and `is_councillor`; plus `page`,
+            `per_page` and `total`. In practice `items` is `[]` and `total`
+            is 0 — see the caveat above.
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.list_people(
+                council_id=council_id,
+                is_councillor=is_councillor,
+                party=party,
+                page=page,
+                per_page=per_page,
+            )
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e
+
+    @server.tool()
+    async def get_person(ctx: Context[AppContext], person_id: int) -> dict[str, Any]:
+        """Get one councillor or officer by id.
+
+        **This dataset is not populated yet: upstream currently holds no
+        people at all**, so every id 404s with "Person not found". That is
+        the state of the scrape, not evidence that a particular person does
+        not exist or does not hold office — do not report it as such. Use
+        `get_meeting` (its `attendees` and `additional_attendees`) or the
+        minutes documents to find out who is involved in a council's
+        business.
+
+        Args:
+            person_id: The person's `id`, which would come from
+                `list_people`.
+
+        Returns:
+            The person record (`id`, `council_id`, `name`, `role`, `party`,
+            `is_councillor`) once the dataset is populated.
+        """
+        client = ctx.request_context.lifespan_context.client
+        try:
+            return await client.get_person(person_id)
+        except CouncilApiError as e:
+            raise ToolError(_api_error(e)) from e

@@ -104,8 +104,17 @@ def _routes() -> dict[Route, tuple[int, Any]]:
             load_fixture("document_file"),
         ),
         ("GET", "/decisions", query(**paging)): (200, load_fixture("decisions")),
+        ("GET", "/decisions", query(**tool_paging)): (200, load_fixture("decisions")),
         ("GET", f"/decisions/{DECISION_ID}", ()): (200, load_fixture("decision")),
         ("GET", "/people", query(council_id=COUNCIL_ID, **paging)): (
+            200,
+            load_fixture("people_council_226"),
+        ),
+        ("GET", "/people", query(council_id=COUNCIL_ID, **tool_paging)): (
+            200,
+            load_fixture("people_council_226"),
+        ),
+        ("GET", "/people", query(**tool_paging)): (
             200,
             load_fixture("people_council_226"),
         ),
