@@ -7,3 +7,12 @@ tmp/
 .beads/proxieddb/
 *.gate.lock*
 PLAN.html
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
