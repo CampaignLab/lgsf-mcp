@@ -8,6 +8,7 @@ a live call.
 from __future__ import annotations
 
 import datetime
+from email.utils import format_datetime
 
 import httpx
 import pytest
@@ -247,3 +248,77 @@ async def test_is_closed_after_context_manager_exit(
     async with FixtureClient(transport) as client:
         assert not client.is_closed
     assert client.is_closed
+
+
+# -- Error headers and Retry-After -----------------------------------------
+
+
+def _erroring_client(status: int, headers: dict[str, str]) -> CouncilGatewayClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"detail": "slow down"}, headers=headers)
+
+    return CouncilGatewayClient(transport=httpx.MockTransport(handler))
+
+
+async def _raised(status: int, headers: dict[str, str]) -> CouncilApiError:
+    client = _erroring_client(status, headers)
+    try:
+        with pytest.raises(CouncilApiError) as excinfo:
+            await client.get_council(226)
+    finally:
+        await client.aclose()
+    return excinfo.value
+
+
+async def test_error_carries_response_headers() -> None:
+    error = await _raised(429, {"Retry-After": "5", "X-Request-Id": "abc"})
+    assert error.headers["retry-after"] == "5"  # httpx.Headers is case-insensitive
+    assert error.headers["X-Request-Id"] == "abc"
+
+
+async def test_retry_after_delta_seconds() -> None:
+    assert (await _raised(429, {"Retry-After": "5"})).retry_after == 5.0
+
+
+async def test_retry_after_absent_is_none() -> None:
+    assert (await _raised(429, {})).retry_after is None
+
+
+@pytest.mark.parametrize("value", ["soon", "", "5.5", "1,2"])
+async def test_retry_after_unparseable_is_none(value: str) -> None:
+    assert (await _raised(429, {"Retry-After": value})).retry_after is None
+
+
+async def test_retry_after_negative_delta_clamps_to_zero() -> None:
+    assert (await _raised(429, {"Retry-After": "-5"})).retry_after == 0.0
+
+
+async def test_retry_after_http_date_is_seconds_from_now() -> None:
+    when = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=30)
+    header = format_datetime(when, usegmt=True)
+    retry_after = (await _raised(503, {"Retry-After": header})).retry_after
+    assert retry_after == pytest.approx(30.0, abs=2.0)
+
+
+async def test_retry_after_http_date_in_the_past_is_zero() -> None:
+    when = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)
+    header = format_datetime(when, usegmt=True)
+    assert (await _raised(503, {"Retry-After": header})).retry_after == 0.0
+
+
+async def test_retry_after_naive_http_date_is_treated_as_utc() -> None:
+    """A "-0000" date parses naive; assuming local time could be hours out."""
+    when = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=30)
+    # format_datetime emits "-0000" for a naive input, which parses back naive.
+    header = format_datetime(when.replace(tzinfo=None))
+    assert header.endswith("-0000")
+    retry_after = (await _raised(503, {"Retry-After": header})).retry_after
+    assert retry_after == pytest.approx(30.0, abs=2.0)
+
+
+def test_error_without_headers_still_constructs() -> None:
+    """The two-argument form stays valid; headers are optional."""
+    error = CouncilApiError(500, "boom")
+    assert error.status == 500
+    assert error.retry_after is None
+    assert not error.headers

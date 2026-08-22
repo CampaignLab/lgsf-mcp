@@ -1,16 +1,19 @@
 """Tests for the fixture recorder's retry helper.
 
 The recorder makes ~16 sequential live calls, so a single transient upstream
-5xx must not abort the run. These tests drive the retry against a
+5xx or 429 must not abort the run. These tests drive the retry against a
 ``MockTransport`` that fails a set number of times, because the real upstream
-cannot be made to fail on demand.
+cannot be made to fail on demand. Nothing here really sleeps: ``no_sleep``
+replaces ``asyncio.sleep`` and records the delays instead.
 """
 
 from __future__ import annotations
 
+import datetime
 import importlib.util
 import sys
 from collections.abc import AsyncIterator, Callable
+from email.utils import format_datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -36,10 +39,15 @@ recorder = _load_recorder()
 
 
 class CountingTransport:
-    """Returns ``statuses`` in order, then 200, counting every request."""
+    """Returns ``statuses`` in order, then 200, counting every request.
 
-    def __init__(self, *statuses: int) -> None:
+    ``headers`` are attached to every non-200 response, which is enough for
+    the ``Retry-After`` cases since each of those fails identically.
+    """
+
+    def __init__(self, *statuses: int, headers: dict[str, str] | None = None) -> None:
         self.statuses = list(statuses)
+        self.headers = headers or {}
         self.calls = 0
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -47,7 +55,8 @@ class CountingTransport:
         self.calls += 1
         status = self.statuses[index] if index < len(self.statuses) else 200
         body: Any = {"ok": True} if status == 200 else {"detail": f"boom {status}"}
-        return httpx.Response(status, json=body)
+        headers = {} if status == 200 else self.headers
+        return httpx.Response(status, json=body, headers=headers)
 
 
 @pytest.fixture(autouse=True)
@@ -183,8 +192,10 @@ async def test_error_detail_retries_5xx_before_the_expected_error(
     [
         (CouncilApiError(500, "boom"), True),
         (CouncilApiError(503, "boom"), True),
+        (CouncilApiError(429, "slow down"), True),
         (CouncilApiError(404, "missing"), False),
         (CouncilApiError(422, "invalid"), False),
+        (CouncilApiError(400, "bad"), False),
         (httpx.ConnectTimeout("slow"), True),
         (httpx.ReadTimeout("slow"), True),
         (ValueError("unrelated"), False),
@@ -192,3 +203,122 @@ async def test_error_detail_retries_5xx_before_the_expected_error(
 )
 def test_is_transient(exc: BaseException, expected: bool) -> None:
     assert recorder.is_transient(exc) is expected
+
+
+# -- 429 and Retry-After ---------------------------------------------------
+
+
+def _http_date(offset_seconds: float) -> str:
+    """An HTTP-date ``offset_seconds`` from now, as a server would send it."""
+    when = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
+        seconds=offset_seconds
+    )
+    return format_datetime(when, usegmt=True)
+
+
+async def test_429_is_retried_then_succeeds(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    """429 is transient now, where previously only 5xx was."""
+    transport = CountingTransport(429)
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert transport.calls == 2
+
+
+async def test_retry_after_seconds_beats_exponential_backoff(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    """``Retry-After: 2`` on the first failure waits 2s, not the 1s backoff."""
+    transport = CountingTransport(429, headers={"Retry-After": "2"})
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert SLEPT == [2.0]
+
+
+async def test_retry_after_is_honoured_on_every_attempt(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    """The header wins each time, so the waits do not grow exponentially."""
+    transport = CountingTransport(429, 429, headers={"Retry-After": "3"})
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert transport.calls == 3
+    assert SLEPT == [3.0, 3.0]
+
+
+async def test_absurd_retry_after_is_capped(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    """A day-long Retry-After must not hang the run."""
+    transport = CountingTransport(429, headers={"Retry-After": "86400"})
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert SLEPT == [recorder.MAX_RETRY_AFTER]
+    assert recorder.MAX_RETRY_AFTER == 60.0
+
+
+async def test_429_without_retry_after_uses_exponential_backoff(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    transport = CountingTransport(429, 429)
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert SLEPT == [1.0, 2.0]
+
+
+async def test_retry_after_http_date_is_parsed(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    """The HTTP-date form yields roughly the right delay, not the backoff."""
+    transport = CountingTransport(429, headers={"Retry-After": _http_date(5)})
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert SLEPT == pytest.approx([5.0], abs=2.0)
+
+
+async def test_retry_after_http_date_in_the_past_waits_zero(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    """A stale date must not produce a negative wait."""
+    transport = CountingTransport(429, headers={"Retry-After": _http_date(-3600)})
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert SLEPT == [0.0]
+
+
+async def test_unparseable_retry_after_falls_back_to_backoff(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    transport = CountingTransport(429, headers={"Retry-After": "soon"})
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert SLEPT == [1.0]
+
+
+async def test_retry_after_on_a_503_is_also_honoured(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    """Retry-After is not 429-specific; 503 may carry it too (RFC 9110)."""
+    transport = CountingTransport(503, headers={"Retry-After": "7"})
+    client = client_for(transport)
+    assert await recorder.retry(lambda: client.get_council(226)) == {"ok": True}
+    assert SLEPT == [7.0]
+
+
+async def test_429_still_gives_up_after_three_attempts(
+    client_for: Callable[[CountingTransport], CouncilGatewayClient],
+) -> None:
+    transport = CountingTransport(429, 429, 429, headers={"Retry-After": "1"})
+    client = client_for(transport)
+    with pytest.raises(CouncilApiError) as excinfo:
+        await recorder.retry(lambda: client.get_council(226))
+    assert excinfo.value.status == 429
+    assert transport.calls == recorder.RETRY_ATTEMPTS == 3
+
+
+def test_backoff_delay_ignores_retry_after_on_transport_errors() -> None:
+    """Non-CouncilApiError failures have no headers, so backoff applies."""
+    exc = httpx.ConnectError("no route to host")
+    assert recorder.backoff_delay(exc, 1) == 1.0
+    assert recorder.backoff_delay(exc, 2) == 2.0

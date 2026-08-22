@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime
 import os
 from collections.abc import Mapping
+from email.utils import parsedate_to_datetime
 from types import TracebackType
 from typing import Any, Literal, Self
 
@@ -25,12 +26,50 @@ class CouncilApiError(Exception):
 
     ``detail`` is the parsed JSON error detail when available (for 422 this
     is the FastAPI validation error list), otherwise the raw response text.
+    ``headers`` are the response headers, kept so callers can act on things
+    like ``Retry-After`` without the client itself having a retry policy.
     """
 
-    def __init__(self, status: int, detail: object) -> None:
+    def __init__(
+        self,
+        status: int,
+        detail: object,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(f"Council API error {status}: {detail!r}")
         self.status = status
         self.detail = detail
+        self.headers = httpx.Headers(headers)
+
+    @property
+    def retry_after(self) -> float | None:
+        """``Retry-After`` in seconds, or None if absent or unparseable.
+
+        RFC 9110 allows either delta-seconds or an HTTP-date. A date already
+        in the past yields 0.0, not a negative wait. Deciding whether to
+        honour the value, and any upper bound on it, is the caller's job.
+        """
+        return _parse_retry_after(self.headers.get("Retry-After"))
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Parse a ``Retry-After`` header value into a non-negative seconds delay."""
+    if value is None:
+        return None
+    value = value.strip()
+    try:
+        return max(0.0, float(int(value)))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    # parsedate_to_datetime returns naive for "-0000"; RFC 9110 dates are UTC.
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.UTC)
+    now = datetime.datetime.now(datetime.UTC)
+    return max(0.0, (when - now).total_seconds())
 
 
 def _clean_params(
@@ -112,7 +151,7 @@ class CouncilGatewayClient:
             # FastAPI wraps error details as {"detail": ...}; unwrap it.
             if isinstance(body, dict) and "detail" in body:
                 body = body["detail"]
-            raise CouncilApiError(response.status_code, body)
+            raise CouncilApiError(response.status_code, body, response.headers)
         return response.json()
 
     # -- Councils ---------------------------------------------------------

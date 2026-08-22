@@ -36,17 +36,38 @@ TEXT_LIMIT = 3000
 MISSING_PERSON_ID = 1
 
 # A whole run is ~16 sequential live calls, so one transient 5xx should not
-# abort it. 4xx is never retried: the recorder deliberately captures a 422 and
-# a 404 as fixtures, and retrying those would only waste time.
+# abort it. Other 4xx are never retried: the recorder deliberately captures a
+# 422 and a 404 as fixtures, and retrying those would only waste time.
 RETRY_ATTEMPTS = 3
 RETRY_BACKOFF = 1.0
 
+# Upstream is unthrottled today, but ~16 sequential calls is exactly the shape
+# of client that would trip a rate limit if one were added, so honour 429.
+TOO_MANY_REQUESTS = 429
+
+# A server may ask us to wait for hours; that is not worth blocking a fixture
+# run for, so treat anything longer as "give up and let the caller see it".
+MAX_RETRY_AFTER = 60.0
+
 
 def is_transient(exc: BaseException) -> bool:
-    """True for errors worth retrying: upstream 5xx and transport failures."""
+    """True for errors worth retrying: 429, upstream 5xx, transport failures."""
     if isinstance(exc, CouncilApiError):
-        return exc.status >= 500
+        return exc.status >= 500 or exc.status == TOO_MANY_REQUESTS
     return isinstance(exc, httpx.TransportError)
+
+
+def backoff_delay(exc: BaseException, attempt: int) -> float:
+    """How long to wait before ``attempt + 1``.
+
+    A server-supplied ``Retry-After`` beats our guesswork, but is capped so a
+    hostile or mistaken header cannot hang the run.
+    """
+    if isinstance(exc, CouncilApiError):
+        retry_after = exc.retry_after
+        if retry_after is not None:
+            return min(retry_after, MAX_RETRY_AFTER)
+    return RETRY_BACKOFF * float(2 ** (attempt - 1))
 
 
 async def retry[T](call: Callable[[], Awaitable[T]]) -> T:
@@ -61,7 +82,7 @@ async def retry[T](call: Callable[[], Awaitable[T]]) -> T:
         except Exception as exc:
             if attempt == RETRY_ATTEMPTS or not is_transient(exc):
                 raise
-            delay = RETRY_BACKOFF * 2 ** (attempt - 1)
+            delay = backoff_delay(exc, attempt)
             print(
                 f"attempt {attempt}/{RETRY_ATTEMPTS} failed ({exc}); "
                 f"retrying in {delay:g}s",
