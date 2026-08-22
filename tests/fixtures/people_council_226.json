@@ -1,6 +1,27 @@
 {
-  "items": [],
+  "items": [
+    {
+      "id": 16432,
+      "council_id": 226,
+      "name": "Councillor Alexander McLellan",
+      "role": "Councillor, Tillydrone/ Seaton/ Old Aberdeen",
+      "party": "Scottish National Party",
+      "is_councillor": true,
+      "modern_gov_id": null,
+      "ocd_id": null
+    },
+    {
+      "id": 16407,
+      "council_id": 226,
+      "name": "Councillor Alex Nicoll",
+      "role": "Councillor, Kincorth / Nigg / Cove",
+      "party": "Independent",
+      "is_councillor": true,
+      "modern_gov_id": null,
+      "ocd_id": null
+    }
+  ],
   "page": 1,
   "per_page": 2,
-  "total": 0
+  "total": 46
 }

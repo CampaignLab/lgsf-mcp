@@ -3,8 +3,9 @@
 Driven through the real in-memory MCP client, like the other tool tests, so
 the generated schemas and the error surface are what a model would see.
 
-The people tools are exercised against the reality upstream records today:
-``/people`` returns an empty page for every filter and ``/people/{id}`` 404s.
+The people tools are exercised against the recorded fixtures, which now hold
+real councillor records: ``/people`` returns a populated page and
+``/people/{id}`` resolves.
 """
 
 from typing import Any
@@ -216,25 +217,28 @@ async def test_get_decision_maps_upstream_404(fixture_client: FixtureClient) -> 
 # -- list_people -----------------------------------------------------------
 
 
-async def test_list_people_returns_the_empty_upstream_page(
+async def test_list_people_returns_the_upstream_page(
     fixture_client: FixtureClient,
 ) -> None:
-    """Empty is the correct, non-error answer while the scrape is unpopulated."""
     async with Client(create_server(fixture_client)) as client:
         result = await client.call_tool("list_people", {"council_id": COUNCIL_ID})
 
     payload = _payload(result)
-    assert payload["items"] == []
-    assert payload["total"] == 0
+    fixture = load_fixture("people_council_226")
+    assert [person["id"] for person in payload["items"]] == [
+        person["id"] for person in fixture["items"]
+    ]
+    assert payload["total"] == fixture["total"]
+    assert all(person["council_id"] == COUNCIL_ID for person in payload["items"])
 
 
-async def test_list_people_without_filters_is_also_empty(
+async def test_list_people_without_filters_uses_the_default_page(
     fixture_client: FixtureClient,
 ) -> None:
     async with Client(create_server(fixture_client)) as client:
         result = await client.call_tool("list_people", {})
 
-    assert _payload(result)["items"] == []
+    assert _payload(result)["items"] == load_fixture("people_council_226")["items"]
     assert dict(fixture_client.last_request.url.params) == {
         "page": "1",
         "per_page": "25",
@@ -251,7 +255,9 @@ async def test_list_people_passes_filters_upstream(
             {
                 "council_id": COUNCIL_ID,
                 "is_councillor": False,
-                "party": "CON",
+                # Upstream stores full party names, not the short codes that
+                # councils' `majority_party` uses.
+                "party": "Scottish National Party",
                 "page": 3,
                 "per_page": 100,
             },
@@ -260,7 +266,7 @@ async def test_list_people_passes_filters_upstream(
     assert dict(fixture_client.last_request.url.params) == {
         "council_id": str(COUNCIL_ID),
         "is_councillor": "false",
-        "party": "CON",
+        "party": "Scottish National Party",
         "page": "3",
         "per_page": "100",
     }
@@ -269,16 +275,18 @@ async def test_list_people_passes_filters_upstream(
 # -- get_person ------------------------------------------------------------
 
 
-async def test_get_person_surfaces_the_upstream_404(
+async def test_get_person_returns_the_full_record(
     fixture_client: FixtureClient,
 ) -> None:
-    """No person exists upstream yet, so every lookup 404s; say so clearly."""
     async with Client(create_server(fixture_client)) as client:
         result = await client.call_tool("get_person", {"person_id": PERSON_ID})
 
+    assert _payload(result) == load_fixture("person")
+
+
+async def test_get_person_maps_upstream_404(fixture_client: FixtureClient) -> None:
+    async with Client(create_server(fixture_client)) as client:
+        result = await client.call_tool("get_person", {"person_id": 999999})
+
     assert result.is_error is True
-    message = _text(result)
-    assert "Council Gateway API 404:" in message
-    detail = load_fixture("person")
-    assert isinstance(detail, str)
-    assert detail in message
+    assert "Council Gateway API 404:" in _text(result)

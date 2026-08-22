@@ -37,7 +37,7 @@ COUNCIL_ID: int = IDS["council_id"]
 MEETING_ID: int = IDS["meeting_id"]
 DOCUMENT_ID: int = IDS["document_id"]
 DECISION_ID: int = IDS["decision_id"]
-PERSON_ID: int = IDS["person_lookup_id"]
+PERSON_ID: int = IDS["person_id"]
 
 #: The per_page the listing tools default to, which fixtures must serve.
 TOOL_PER_PAGE = 25
@@ -118,6 +118,7 @@ def _routes() -> dict[Route, tuple[int, Any]]:
             200,
             load_fixture("people_council_226"),
         ),
+        ("GET", f"/people/{PERSON_ID}", ()): (200, load_fixture("person")),
         ("GET", "/search", query(q="housing", mode="document", size=2, offset=0)): (
             200,
             load_fixture("search_housing"),
@@ -133,11 +134,6 @@ def _routes() -> dict[Route, tuple[int, Any]]:
             {"detail": load_fixture("validation_422")},
         ),
     }
-    # /people is empty upstream, so the recorded person response is a 404 body.
-    routes[("GET", f"/people/{PERSON_ID}", ())] = (
-        404,
-        {"detail": load_fixture("person")},
-    )
     return routes
 
 

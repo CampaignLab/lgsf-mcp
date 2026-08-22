@@ -32,12 +32,10 @@ ABERDEEN_CITY_ID = 226
 # Enough to prove the text field round-trips without committing a whole PDF.
 TEXT_LIMIT = 3000
 
-# Used only when /people is empty upstream, to record a real 404 body.
-MISSING_PERSON_ID = 1
-
 # A whole run is ~16 sequential live calls, so one transient 5xx should not
 # abort it. Other 4xx are never retried: the recorder deliberately captures a
-# 422 and a 404 as fixtures, and retrying those would only waste time.
+# 422 as a fixture and treats a 404 on /documents/{id}/file as "try the next
+# document", and retrying either would only waste time.
 RETRY_ATTEMPTS = 3
 RETRY_BACKOFF = 1.0
 
@@ -246,16 +244,11 @@ async def record() -> None:
         )
         write("people_council_226", people)
         person_id = first_id(people)
-        ids["person_id"] = person_id
-        # Upstream /people is empty at time of recording (total 0 globally), so
-        # record the genuine 404 rather than inventing a person.
-        ids["person_available"] = person_id is not None
         if person_id is None:
-            missing_id = MISSING_PERSON_ID
-            ids["person_lookup_id"] = missing_id
-            write("person", await error_detail(lambda: client.get_person(missing_id)))
-        else:
-            write("person", await retry(lambda: client.get_person(person_id)))
+            raise SystemExit(f"no people returned for council {ABERDEEN_CITY_ID}")
+        ids["person_id"] = person_id
+        ids["person_available"] = True
+        write("person", await retry(lambda: client.get_person(person_id)))
 
         write("search_housing", await retry(lambda: client.search("housing", size=2)))
 

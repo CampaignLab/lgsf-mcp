@@ -1,1 +1,10 @@
-"Person not found"
+{
+  "id": 16432,
+  "council_id": 226,
+  "name": "Councillor Alexander McLellan",
+  "role": "Councillor, Tillydrone/ Seaton/ Old Aberdeen",
+  "party": "Scottish National Party",
+  "is_councillor": true,
+  "modern_gov_id": null,
+  "ocd_id": null
+}

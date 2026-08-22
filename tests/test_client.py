@@ -91,12 +91,8 @@ async def test_list_people(fixture_client: FixtureClient) -> None:
     assert result == load_fixture("people_council_226")
 
 
-async def test_get_person_404(fixture_client: FixtureClient) -> None:
-    """Upstream /people is empty, so the recorded response is a genuine 404."""
-    with pytest.raises(CouncilApiError) as excinfo:
-        await fixture_client.get_person(PERSON_ID)
-    assert excinfo.value.status == 404
-    assert excinfo.value.detail == load_fixture("person")
+async def test_get_person(fixture_client: FixtureClient) -> None:
+    assert await fixture_client.get_person(PERSON_ID) == load_fixture("person")
 
 
 async def test_search(fixture_client: FixtureClient) -> None:
