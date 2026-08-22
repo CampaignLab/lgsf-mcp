@@ -27,9 +27,10 @@ async def test_initialize_and_instructions(stub_client: CouncilGatewayClient) ->
         assert "Councils" in client.instructions
 
 
-async def test_no_tools_registered_yet(stub_client: CouncilGatewayClient) -> None:
+async def test_tools_are_registered(stub_client: CouncilGatewayClient) -> None:
     async with Client(create_server(stub_client)) as client:
-        assert (await client.list_tools()).tools == []
+        names = {tool.name for tool in (await client.list_tools()).tools}
+    assert "search_council_data" in names
 
 
 async def test_injected_client_is_not_closed(
