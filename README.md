@@ -20,25 +20,31 @@ that can be added without breaking existing clients.
 ## Data pipeline
 
 ```
-council websites (ModernGov, CMIS, bespoke HTML)
+council websites (ModernGov; ~80% of councils)
         │  scraped by
         ▼
-  LGSF — Local Government Scraper Framework
-        │  loaded into
+  poteris/council-scraper (Rails + Sidekiq) → Postgres + OpenSearch + DO Spaces
+        │  read by
         ▼
-  Council Gateway (Postgres + OpenSearch)  ──  /council-api  (REST, OpenAPI)
+  poteris/council-api (FastAPI, read-only)  ──  /council-api  (REST, OpenAPI)
         │
         ▼
   lgsf-mcp (this repo)  ──  MCP tools  ──▶  Claude / other MCP clients
 ```
 
+Relationship to Democracy Club's LGSF is not yet confirmed: `council-api`'s
+README names `council-scraper` as its data source, and `council-scraper`
+contains no reference to LGSF.
+
 ## Resources
 
 | Resource | URL | Notes |
 | --- | --- | --- |
-| Council Gateway API | <https://councilgateway.poteris.co.uk/council-api> | Read-only REST API. Currently no auth required despite spec declaring bearer. |
+| Council Gateway API | <https://councilgateway.poteris.co.uk/council-api> | Read-only REST API. Bearer auth is a static `API_TOKENS` list; the live instance runs with `auth_disabled`, so no token is needed today. |
+| council-api source | <https://github.com/poteris/council-api> | FastAPI over the scraper's Postgres + OpenSearch. Deployed on Render (Frankfurt). `app/models.py` mirrors the scraper schema. |
+| council-scraper source | <https://github.com/poteris/council-scraper> | Rails/Sidekiq scraper of ModernGov sites; owns the schema. ~1.59M documents in production. |
 | OpenAPI spec | <https://councilgateway.poteris.co.uk/council-api/openapi.json> | OpenAPI 3.1. 15 `GET` endpoints. No descriptions in spec. |
-| Council Gateway dashboard | <https://councilgateway.poteris.co.uk/> | Alpha web UI over the same data. Source repo not publicly identified. |
+| Council Gateway dashboard | <https://councilgateway.poteris.co.uk/> | Alpha web UI over the same data. Source repo not publicly identified (not `council-api`, which is API-only). |
 | LGSF | <https://github.com/DemocracyClub/LGSF> | Democracy Club's scraper framework. One package per council (~440). Scrapes councillors, minutes, decisions. Alpha/unstable. |
 | lgsf-dashboard | <https://github.com/DemocracyClub/lgsf-dashboard> | Eleventy static site showing LGSF scraper run logbooks (pass/fail per council). Not the Council Gateway UI. |
 | Democracy Club Slack | <https://slack.democracyclub.org.uk/> | Recommended by LGSF README for anyone using the data. |
@@ -56,6 +62,22 @@ council websites (ModernGov, CMIS, bespoke HTML)
 
 All list endpoints paginate with `page` / `per_page` (max 100) and return
 `{items, page, per_page, total}`. Search paginates with `size` / `offset`.
+
+Facts from the `council-api` README that matter for tool design:
+
+- Only **document text** and **document classifications** are indexed in
+  OpenSearch. Meetings, decisions and people are not searchable; reach them
+  via filters or via the documents that mention them.
+- `/search` is a `multi_match` phrase query (`slop: 10`) with highlighting;
+  each hit is hydrated with its Postgres record.
+- Documents are polymorphic: `source_type` / `source_id` point at a Meeting
+  or a Decision.
+- Meeting detail includes LLM-generated summaries (`topline`, `about`,
+  `notes`); `/documents/{id}/classifications` lists LLM classification runs.
+- `/documents/{id}/file` redirects to a presigned DigitalOcean Spaces URL.
+- Council-wide filtered listings are slow in production (documents by
+  council ~15s, `is_minutes` ~7s, key decisions ~3.5s) unless optional
+  indexes have been added.
 
 ## Status
 

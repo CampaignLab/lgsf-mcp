@@ -6,12 +6,12 @@
 | --- | --- | --- |
 | Language | Python ≥ 3.12 | Matches LGSF / DC ecosystem; `uv` for deps. |
 | MCP framework | `mcp` ≥ 2.0 (official SDK, `MCPServer` class from `mcp.server`) | Decorator-based tools, schema from type hints. v2.0.0 (2026-07-28) renamed `FastMCP` → `MCPServer` and removed the `mcp.server.fastmcp` package. |
-| HTTP client | `httpx` | Async, typed, easy to mock. |
+| HTTP client | `httpx` | Async, typed, easy to mock. Read timeout ≥ 60s: upstream council-wide listings can take 15s. |
 | Transport | stdio **and** streamable HTTP (`--transport` flag) | stdio for Claude Code/Desktop. HTTP for testing from Claude.ai / ChatGPT via a public URL (Tailscale Funnel). |
 | Public test URL | Tailscale Funnel | `tailscale funnel 8000` → `https://<machine>.<tailnet>.ts.net`. Funnel (not Serve) is needed: Anthropic/OpenAI servers are not on the tailnet. No auth for testing; upstream is open and read-only anyway. |
 | ChatGPT compatibility | `search` + `fetch` tools in OpenAI's required shape | ChatGPT connectors require exactly these; Claude does not care. Rich tools keep distinct names. |
 | Tool definitions | Hand-written | Spec has zero descriptions; generated tools would be unusable by an LLM. 15 endpoints is small. |
-| Upstream auth | Optional `COUNCIL_API_TOKEN` env var | API is currently open; send `Authorization: Bearer` only if set. |
+| Upstream auth | Optional `COUNCIL_API_TOKEN` env var | Upstream uses a static `API_TOKENS` list but currently runs `auth_disabled`; send `Authorization: Bearer` only if set. |
 | Inbound auth (HTTP) | None for first test; then OAuth resource-server mode | See *Protecting the HTTP endpoint* below. stdio needs none. |
 | Base URL | `COUNCIL_API_URL` env var, default `https://councilgateway.poteris.co.uk/council-api` | Lets a local gateway instance be used. |
 
@@ -107,7 +107,10 @@ detail.
 - Write descriptions explaining: what a council/meeting/document/decision
   is; that documents hang off meetings *or* decisions (`source_type` /
   `source_id`); that `is_minutes` documents carry the extracted text; that
-  `search` is the right starting point for open-ended questions.
+  `search_council_data` is the right starting point for open-ended questions
+  but only covers document text and classifications (not meetings, decisions
+  or people); that council-wide document listings are slow, so prefer
+  meeting- or decision-scoped listings.
 - Text windowing helper for `get_document`.
 
 ### 3. Testing and integration
@@ -148,8 +151,8 @@ Open questions to settle before starting phase 4:
   with overlap, storing `document_id` + char offsets so `get_document` can
   jump straight to the relevant window via `text_offset`.
 - **Embedding model.** Local (e.g. `bge-small`, `nomic-embed`) vs hosted
-  API. Cost/latency trade-off; decide once corpus size is known
-  (`/search` reports `total: 10000` for a common term, i.e. capped, so true
-  corpus size needs measuring via `/documents` totals).
+  API. Cost/latency trade-off. Corpus is ~1.59M documents in production
+  (per `council-api` README); minutes subset needs measuring via
+  `/documents?is_minutes=true` `total`.
 - **Hybrid ranking.** If both backends exist, reciprocal rank fusion over
   text + vector results is the simplest thing that works.
