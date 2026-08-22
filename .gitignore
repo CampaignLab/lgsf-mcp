@@ -6,3 +6,4 @@ tmp/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+PLAN.html
