@@ -342,11 +342,28 @@ These are things the data does, not things the API documents.
   `get_document(include_text=True)` on either returns empty `text` with
   `text_length: 0` — check `extract_status` before concluding the document
   is blank.
-- **`attendees` is often empty.** Four meetings sampled across two councils
-  (Enfield 95384; Aberdeen 130462, 116785, 115599) all had `attendees: []`
-  and `additional_attendees: []`, on both 2026-08-23 and the earlier sampling.
-  Do not rely on it for who was present — the minutes text carries the
-  attendance list (see the `MEMBERS:` block in the extracted text above).
+- **`attendees` is empty throughout the dataset**, and `additional_attendees`
+  is very nearly so. Measured 2026-08-23 over **3145 meetings** fetched with
+  `get_meeting` — 60 randomly drawn councils, all 31 `cmis` councils, and 22
+  spans of the meeting-id range from 1 to 125120, spanning 2023 to 2026:
+
+  | field | non-empty |
+  |---|---|
+  | `attendees` | **0 of 3145** |
+  | `additional_attendees` | 83 of 3145 |
+
+  The 83 `additional_attendees` hits are a scraping artefact, not a council's
+  practice: they cluster in meeting ids ~700-1120 (19-25% populated there) and
+  are spread across 24 different councils, while ids from 20000 upward — the
+  ongoing scrape, mid-2024 onwards — gave 1 hit in 2243 meetings. When present
+  they are bare name strings (`"Councillor Peter Fane"`) with no ids, so they
+  do not join to `list_people`.
+
+  So never treat an empty list as "nobody attended" — it means the scrape
+  captured no attendance. The minutes text carries the real attendance list
+  (see the `MEMBERS:` block in the extracted text above); read it with
+  `get_document(include_text=True)` on a document whose `extract_status` is
+  `success`.
 - **LLM summary fields are usually null.** `topline`, `about` and `notes` on
   meetings, and `topline` on decisions, were null in every record sampled.
   Read them if present; do not plan a strategy around them.

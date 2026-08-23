@@ -488,8 +488,10 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
             `items` — meeting **summaries** only: `id`, `council_id`,
             `committee_id`, `name`, `url`, `date` and `topline` (a one-line
             LLM summary, often null). Call `get_meeting(id)` for the full
-            record with documents, decisions, attendees and the longer
-            summaries. Also `page`, `per_page` and `total`.
+            record with documents, decisions and the longer summaries — but
+            not for attendance, whose `attendees` field is empty throughout
+            the dataset; the minutes text carries that instead. Also
+            `page`, `per_page` and `total`.
         """
         parsed_from = _parse_date("date_from", date_from)
         parsed_to = _parse_date("date_to", date_to)
@@ -512,8 +514,9 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
         """Get one meeting in full, with everything attached to it.
 
         This is the hub record: a meeting pulls together the committee that
-        held it, the papers published for it, the decisions taken at it and
-        who was there. Reach a meeting id from `list_meetings`, or from the
+        held it, the papers published for it and the decisions taken at it.
+        It does **not** reliably tell you who was there — see `attendees`
+        below. Reach a meeting id from `list_meetings`, or from the
         `meeting_id` on a `search_council_data` hit.
 
         Args:
@@ -544,8 +547,25 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
               value tells you nothing. Checking the document `url` or `name`
               for "minutes" is more reliable than the flag.
             - `decisions` — decisions recorded against this meeting.
-            - `attendees` and `additional_attendees` — the councillors and
-              officers present.
+            - `attendees` and `additional_attendees` — **do not rely on
+              these for who was present.** `attendees` was empty in **all
+              3145 meetings sampled** on 2026-08-23, across 60 randomly
+              drawn councils, all 31 `cmis` councils and 22 spans of the
+              meeting-id range; not one meeting anywhere had a single
+              entry. `additional_attendees` was non-empty in 83 of those
+              3145, and those hits are a scraping artefact rather than a
+              council's practice: they cluster in meeting ids ~700-1120
+              (19-25% populated) and are spread across 24 different
+              councils, while the ongoing scrape from id 20000 upward
+              yielded 1 hit in 2243 meetings. When it is populated it holds
+              bare name strings (`"Councillor Peter Fane"`) with no ids, so
+              it does not join to `list_people`. **An empty list here means
+              the scrape captured no attendance, not that nobody
+              attended** — never report it as "no attendees recorded" for
+              the meeting. To find who was actually there, read the minutes
+              with `get_document(include_text=true)`: attendance is
+              recorded in the document text, typically in a `MEMBERS:` or
+              "Present" block near the top.
             - `tags` — topic tags for the meeting.
         """
         client = ctx.request_context.lifespan_context.client
@@ -879,8 +899,16 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
 
         **People are not full-text searchable**; `search_council_data`
         indexes document text and document classifications only. For who
-        attended a particular meeting, use `get_meeting`, whose `attendees`
-        and `additional_attendees` are populated, or read the minutes.
+        attended a particular meeting, **read the minutes** — pick a
+        document whose `extract_status` is `success` and call
+        `get_document(include_text=true)`; attendance is recorded in the
+        text, typically in a `MEMBERS:` or "Present" block. **Do not use
+        `get_meeting`'s `attendees` for this**: it was empty in all 3145
+        meetings sampled on 2026-08-23, and its sibling
+        `additional_attendees` was populated in only 83 of them, clustered
+        in an early-2024 patch of meeting ids and holding bare name strings
+        that do not join back to these person records. An empty list there
+        is a gap in the scrape, not evidence that nobody attended.
 
         Args:
             council_id: Restrict to one council (see `list_councils`).
@@ -924,9 +952,12 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
         which means that id is not in the dataset — it is **not** evidence
         that the person does not exist or does not hold office. The dataset
         is councillors only, so anyone who is not an elected member (council
-        officers, for instance) will simply be absent; use `get_meeting`
-        (its `attendees` and `additional_attendees`) or the minutes
-        documents to find them.
+        officers, for instance) will simply be absent; to find them, **read
+        the minutes** with `get_document(include_text=true)` on a document
+        whose `extract_status` is `success`, where attendance is recorded in
+        the text. **`get_meeting`'s `attendees` will not help**: it was empty
+        in all 3145 meetings sampled on 2026-08-23, and
+        `additional_attendees` was populated in only 83 of them.
 
         Args:
             person_id: The person's `id`, from `list_people`.
