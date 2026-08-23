@@ -84,8 +84,9 @@ Facts from the `council-api` README that matter for tool design:
 ## Status
 
 Working. 14 tools over the Council Gateway API, stdio and streamable-HTTP
-transports, optional static bearer auth on HTTP, and an opt-in live test
-suite against the real API. See [PLAN.md](PLAN.md).
+transports, optional static bearer auth on HTTP, a research skill teaching
+the data model and query strategy, and an opt-in live test suite against the
+real API. See [PLAN.md](PLAN.md).
 
 ## Usage
 
@@ -184,6 +185,35 @@ LGSF_MCP_TOKEN=some-long-random-string \
 
 Traffic over a Funnel is subject to non-configurable bandwidth limits, so
 treat this as a testing path, not a deployment.
+
+### Research skill (recommended)
+
+The tools describe themselves well individually, but the *strategy* — the
+polymorphic document model, search-then-window-then-context, when to filter
+instead of search, and the traps that produce confidently wrong political
+numbers — fits in no single tool description. It lives in
+[`skills/lgsf-research/SKILL.md`](skills/lgsf-research/SKILL.md).
+
+It is a plain Claude Code skill, and it installs from **either** route:
+
+- **Bundled with the plugin.** The file sits at `skills/lgsf-research/` in
+  the repository root, which is exactly where the Claude Code plugin loader
+  expects a plugin's skills, so a `/plugin install` picks it up with no
+  copying and no second source of truth.
+- **Copied by hand**, for anyone wiring the server up through `.mcp.json`
+  rather than the plugin:
+
+  ```bash
+  mkdir -p ~/.claude/skills
+  cp -r /path/to/lgsf-mcp/skills/lgsf-research ~/.claude/skills/
+  ```
+
+  Or per project, into `.claude/skills/` instead.
+
+Both routes read the same file, so there is only one copy to maintain. The
+skill is worth loading before any question whose answer someone might quote:
+it is the only place that says the dataset covers roughly 80% of UK councils,
+so a null result is not proof that something did not happen.
 
 ### Tests
 
