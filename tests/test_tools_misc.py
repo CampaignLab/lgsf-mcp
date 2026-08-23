@@ -322,3 +322,92 @@ async def test_get_person_maps_upstream_404(fixture_client: FixtureClient) -> No
 
     assert result.is_error is True
     assert "Council Gateway API 404:" in _text(result)
+
+
+# -- attendance overclaim guard --------------------------------------------
+
+#: Wording from when the descriptions asserted that ``get_meeting`` carries
+#: attendance. A 3145-meeting sample on 2026-08-23 — 60 randomly drawn
+#: councils, all 31 ``cmis`` councils and 22 spans of the meeting-id range
+#: from 1 to 125120 — found ``attendees`` non-empty in **none** of them, and
+#: ``additional_attendees`` in 83, clustered in meeting ids ~700-1120 across
+#: 24 councils (a scrape artefact, not any council's practice). A description
+#: drifting back to these claims would have a model report "no attendees
+#: recorded" as a fact about the meeting rather than a gap in the data, so
+#: guard the *absence* of the false claim — positive assertions alone would
+#: not catch the drift.
+STALE_ATTENDEE_PHRASES = [
+    "whose `attendees` and `additional_attendees` are populated",
+    "`attendees` and `additional_attendees` are populated",
+    "the councillors and officers present",
+    "record with documents, decisions, attendees and the longer",
+    "use `get_meeting` (its `attendees` and `additional_attendees`)",
+    "(its `attendees` and `additional_attendees`) or the minutes",
+    "the decisions taken at it and who was there",
+]
+
+#: Tools whose descriptions mention attendance at all, and so could drift.
+ATTENDANCE_TOOLS = ["get_meeting", "list_meetings", "list_people", "get_person"]
+
+
+@pytest.mark.parametrize("tool", ATTENDANCE_TOOLS)
+async def test_descriptions_never_claim_attendance_is_populated(
+    fixture_client: FixtureClient, tool: str
+) -> None:
+    async with Client(create_server(fixture_client)) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    description = tools[tool].description
+    assert description is not None
+    # Docstrings are wrapped at 88 chars, so match a single-spaced rendering.
+    flattened = " ".join(description.split())
+    stale = [phrase for phrase in STALE_ATTENDEE_PHRASES if phrase in flattened]
+    assert stale == []
+
+
+@pytest.mark.parametrize(
+    ("tool", "phrases"),
+    [
+        (
+            "get_meeting",
+            [
+                # The measured result, so a model cannot read an empty list
+                # as "nobody attended".
+                "do not rely on",
+                "3145 meetings sampled",
+                "not one meeting anywhere had a single entry",
+                # ...and where attendance actually lives instead.
+                "read the minutes with `get_document(include_text=true)`",
+                "MEMBERS:",
+            ],
+        ),
+        (
+            "list_people",
+            [
+                "read the minutes",
+                "get_document(include_text=true)",
+                "empty in all 3145 meetings sampled",
+                "gap in the scrape",
+            ],
+        ),
+        (
+            "get_person",
+            [
+                "read the minutes",
+                "get_document(include_text=true)",
+                "will not help",
+            ],
+        ),
+    ],
+)
+async def test_descriptions_route_attendance_to_the_minutes_text(
+    fixture_client: FixtureClient, tool: str, phrases: list[str]
+) -> None:
+    async with Client(create_server(fixture_client)) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    description = tools[tool].description
+    assert description is not None
+    flattened = " ".join(description.split())
+    missing = [phrase for phrase in phrases if phrase not in flattened]
+    assert missing == []
