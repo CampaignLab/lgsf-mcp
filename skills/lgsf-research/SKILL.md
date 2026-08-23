@@ -50,7 +50,9 @@ reach a meeting, decision or person you must filter, or arrive via a document.
 
 Search for the topic, read the highlights, read the document text, then get
 the surrounding context. Here is that loop run for real against the live API,
-with the actual values returned.
+with the actual values returned (re-verified 2026-08-23). Treat the totals and
+counts below as an illustration of the shape of the responses, not as figures
+to quote: the corpus grows continuously.
 
 ### 1. Search
 
@@ -224,7 +226,8 @@ Two tools the loop above does not reach, and two you should ignore.
 
 **Never report a filtered `party` total as a party's councillor count.**
 `party` is unnormalised free text matched exactly, and the same party is
-spelled many ways. Live totals from `list_people`:
+spelled many ways. Live totals from `list_people` (measured 2026-08-23; these
+drift as councils are rescraped, so re-measure rather than quoting them):
 
 | filter | `total` |
 | --- | --- |
@@ -276,9 +279,11 @@ match no person — do not pass them to `list_people(party=...)`.
 journalistic conclusion from your answer.**
 
 The dataset covers councils whose websites run ModernGov (plus a few CMIS) —
-roughly **80% of UK councils**. Live: `list_councils` reports `total: 320`
-(289 `modern_gov`, 31 `cmis`). Hundreds of UK authorities publish through
-other systems and are simply not here.
+roughly **80% of UK councils**. Live on 2026-08-23, `list_councils` reported
+`total: 320` (289 `modern_gov`, 31 `cmis`); check it with a single
+`list_councils(per_page=1)` rather than quoting that number, since councils
+are added over time. Hundreds of UK authorities publish through other systems
+and are simply not here.
 
 So an empty result means **one of**:
 
@@ -289,9 +294,9 @@ So an empty result means **one of**:
 
 You cannot tell these apart from a null result. Never write "no council has
 discussed X" or "council Y never debated Z". Write "I found no record of X in
-the councils covered by this dataset (about 320, roughly 80% of UK
-authorities), searching for the phrase '...'". Before concluding absence, try
-at least one reworded phrase, and check the council is in the dataset at all.
+the councils covered by this dataset (roughly 80% of UK authorities),
+searching for the phrase '...'". Before concluding absence, try at least one
+reworded phrase, and check the council is in the dataset at all.
 
 ## Data-quality traps found in live data
 
@@ -299,29 +304,49 @@ These are things the data does, not things the API documents.
 
 - **`is_minutes` under-reports.** Document 1199223 above is literally
   `Printed+minutes+...pdf`, has `extract_status: "success"` and contains the
-  minutes text — and its `is_minutes` is **false**. Every one of the 160
-  documents on that meeting had `is_minutes: false`. So
-  `list_documents(is_minutes=True)` and `list_meetings(has_minutes=True)`
+  minutes text — and its `is_minutes` is **false**. Every single document on
+  that meeting had `is_minutes: false` — all 161 of them, measured 2026-08-23.
+  So `list_documents(is_minutes=True)` and `list_meetings(has_minutes=True)`
   silently drop real minutes. Treat a true value as a positive signal;
   **never treat a false value as "this is not minutes"**, and never conclude
   from `has_minutes=True` returning nothing that a council published no
   minutes. Search the text, or check document `url`s for "minutes".
 - **`get_meeting`'s `documents` is not scoped to that sitting.** Meeting
-  95384 returned 160 documents with `created_at` spanning September to
-  December 2025 — the committee's whole document set. Do not assume every
-  document listed on a meeting was published *for* that meeting; check
-  `created_at` and the document `url` against the meeting `date`.
+  95384 — the Culture and Environment Scrutiny Panel, dated 11 November 2025 —
+  returned over 150 documents whose `created_at` spans several weeks either
+  side of it (161 documents created between 10 Nov and 8 Dec 2025, measured
+  2026-08-23; the set grows as the council publishes).
+
+  A date range alone could be explained away as papers published late. The
+  `url`s cannot: most of them belong to **other committees entirely**. On that
+  Scrutiny Panel sitting you will find
+
+  ```
+  https://governance.enfield.gov.uk/documents/g15224/Decisions+05th-Nov-2025+19.00+Cabinet.pdf?T=2
+  ```
+
+  — a **Cabinet** decisions pack from 5 November, six days before the meeting
+  — alongside a Licensing Sub-Committee agenda, a Full Council reports pack
+  for 12 November and a Councillor Conduct Committee pack for 17 November.
+  Only a handful of the documents on that meeting even mention the panel's own
+  name in their `url`.
+
+  So do not assume a document listed on a meeting was published *for* that
+  meeting, and never attribute its contents to that committee. Check
+  `created_at` and the document `url` against the meeting `date` and the
+  committee `name` before citing anything.
 - **`extract_status` has three values, not two**: `success`, `pending` and
-  `failed`. About 15 of those 160 documents were `failed`. A `failed`
-  document has no text and never will; a `pending` one may get some later.
+  `failed`, and `failed` is common — well over one in ten of that meeting's
+  documents (22 of 161, measured 2026-08-23). A `failed` document has no text
+  and never will; a `pending` one may get some later.
   `get_document(include_text=True)` on either returns empty `text` with
   `text_length: 0` — check `extract_status` before concluding the document
   is blank.
 - **`attendees` is often empty.** Four meetings sampled across two councils
   (Enfield 95384; Aberdeen 130462, 116785, 115599) all had `attendees: []`
-  and `additional_attendees: []`. Do not rely on it for who was present —
-  the minutes text carries the attendance list (see the `MEMBERS:` block in
-  the extracted text above).
+  and `additional_attendees: []`, on both 2026-08-23 and the earlier sampling.
+  Do not rely on it for who was present — the minutes text carries the
+  attendance list (see the `MEMBERS:` block in the extracted text above).
 - **LLM summary fields are usually null.** `topline`, `about` and `notes` on
   meetings, and `topline` on decisions, were null in every record sampled.
   Read them if present; do not plan a strategy around them.
