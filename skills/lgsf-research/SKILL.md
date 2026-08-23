@@ -201,6 +201,25 @@ There is **no name search for councils**. To turn "Enfield" into id 176, page
 yourself. `role` has the form `"Councillor, <ward>"` — the ward is embedded
 there, there is no ward field.
 
+## The remaining tools
+
+Two tools the loop above does not reach, and two you should ignore.
+
+- **`get_document_file_url(document_id=...)`** gives a presigned link to the
+  original PDF. Use it when the user wants the source document itself rather
+  than your reading of it — a link they can open and check is often the most
+  useful thing you can hand over. It expires in about 600 seconds, so present
+  it straight away rather than holding it. It legitimately 404s for documents
+  whose `extract_status` is `pending` or `failed`, so check that first.
+- **`get_person(person_id=...)`** returns one councillor. Ids only come from
+  `list_people`; there is no lookup by name. A 404 means that id is not in
+  the dataset — it is **not** evidence the person does not hold office. The
+  dataset is councillors only, so officers are absent by construction.
+- **`search` and `fetch`** exist solely for ChatGPT, which can only call
+  tools with those exact names. Ignore them: `search_council_data` and
+  `get_document` do the same job with filters, paging, highlights and text
+  windowing that the aliases throw away.
+
 ## The party-counting trap
 
 **Never report a filtered `party` total as a party's councillor count.**
