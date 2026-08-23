@@ -85,6 +85,17 @@ async def test_document_tools_are_listed_with_their_parameters(
                 "is_minutes",
                 "unclassified",
                 "waiting",
+                # ``is_minutes`` is unreliable, so the description must warn
+                # against filtering on it rather than recommend it.
+                "under-reports badly, so avoid filtering on",
+                "silently drops real minutes",
+                "not** evidence that none were published",
+                "whose `extract_status` is `success`",
+                'look for "minutes" in the `url` or `name`',
+                'never read a false value as "not minutes"',
+                # ``extract_status`` has three values, not two.
+                "`success` (text is there to read), `pending`",
+                "and `failed` (extraction went wrong",
             ],
         ),
         (
@@ -97,6 +108,12 @@ async def test_document_tools_are_listed_with_their_parameters(
                 "text_length",
                 "clamped to 50000",
                 "omits the `name` key",
+                # Go by ``extract_status``, not the unreliable flag.
+                "whose `extract_status` is `success`",
+                "not `is_minutes`",
+                "under-reports so badly",
+                # ``failed`` is the third ``extract_status`` value.
+                "`failed` (extraction went wrong",
             ],
         ),
         (
@@ -123,6 +140,64 @@ async def test_document_descriptions_state_the_required_facts(
     flattened = " ".join(description.split())
     missing = [phrase for phrase in phrases if phrase not in flattened]
     assert missing == []
+
+
+#: Wording from when the descriptions were written against fixtures, which
+#: presented ``is_minutes`` / ``has_minutes`` as the reliable route to
+#: readable minutes. Live data disproves it: document 1199223 is named
+#: ``Printed+minutes+...pdf``, extracted successfully, and is
+#: ``is_minutes: false``, as is every document on meeting 95384. A
+#: description drifting back to any of these claims would send a model to
+#: conclude minutes do not exist when they plainly do, so guard the *absence*
+#: of the false claim — positive assertions alone would not catch the drift.
+STALE_MINUTES_FLAG_PHRASES = [
+    "documents with `is_minutes=true` carry extracted text",
+    "**These are the documents that carry extracted text**",
+    "these are the meetings with extracted text you can actually read",
+    "pass the `id` of a document with `is_minutes=true`",
+    "on a document with `is_minutes=true`",
+    "only minutes documents.",
+    "return only meetings that have a minutes document attached",
+]
+
+#: ``extract_status`` has three values; a description enumerating only two
+#: would imply ``failed`` cannot happen.
+STALE_EXTRACT_STATUS_PHRASES = [
+    "(`success`, `pending`)",
+    "`success` and `pending`",
+    "either `success` or `pending`",
+]
+
+
+@pytest.mark.parametrize(
+    "tool", ["list_documents", "get_document", "list_meetings", "get_meeting"]
+)
+async def test_descriptions_never_claim_the_minutes_flag_is_reliable(
+    fixture_client: FixtureClient, tool: str
+) -> None:
+    async with Client(create_server(fixture_client)) as client:
+        tools = {t.name: t for t in (await client.list_tools()).tools}
+
+    description = tools[tool].description
+    assert description is not None
+    flattened = " ".join(description.split())
+    stale = [
+        phrase
+        for phrase in STALE_MINUTES_FLAG_PHRASES + STALE_EXTRACT_STATUS_PHRASES
+        if phrase in flattened
+    ]
+    assert stale == []
+
+
+async def test_server_instructions_do_not_claim_the_minutes_flag_is_reliable(
+    fixture_client: FixtureClient,
+) -> None:
+    instructions = create_server(fixture_client).instructions
+    assert instructions is not None
+    flattened = " ".join(instructions.split())
+    stale = [phrase for phrase in STALE_MINUTES_FLAG_PHRASES if phrase in flattened]
+    assert stale == []
+    assert "`is_minutes` under-reports badly" in flattened
 
 
 # -- list_documents --------------------------------------------------------

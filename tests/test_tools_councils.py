@@ -80,7 +80,21 @@ async def test_tools_are_listed_with_their_parameters(
         ("get_council", ["committees", "never need a second call"]),
         (
             "list_meetings",
-            ["summaries", "topline", "get_meeting", "has_minutes", "minutes"],
+            [
+                "summaries",
+                "topline",
+                "get_meeting",
+                "has_minutes",
+                "minutes",
+                # ``has_minutes`` is derived from the unreliable per-document
+                # ``is_minutes`` flag, so the description must warn rather
+                # than recommend it.
+                "under-reports badly, so avoid it",
+                "silently drops real minutes",
+                "not** evidence that a council published none",
+                'extract_status == "success"',
+                "Omit for both, which is the safe default",
+            ],
         ),
         (
             "get_meeting",
@@ -95,6 +109,17 @@ async def test_tools_are_listed_with_their_parameters(
                 "notes",
                 "is_minutes",
                 "get_document",
+                # ``documents`` spans the committee's wider set, not just
+                # this sitting's papers.
+                "not reliably scoped to this one",
+                "created_at",
+                "wider document set",
+                "even papers belonging to other committees",
+                "10 Nov to 8 Dec 2025",
+                # and the flag is not how to pick the readable ones.
+                "extract_status` is `success`",
+                "`is_minutes` flag to pick them",
+                "under-reports badly",
             ],
         ),
     ],
@@ -107,7 +132,9 @@ async def test_descriptions_state_the_required_facts(
 
     description = tools[tool].description
     assert description is not None
-    missing = [phrase for phrase in phrases if phrase not in description]
+    # Docstrings are wrapped at 88 chars, so match a single-spaced rendering.
+    flattened = " ".join(description.split())
+    missing = [phrase for phrase in phrases if phrase not in flattened]
     assert missing == []
 
 

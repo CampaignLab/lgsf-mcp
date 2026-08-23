@@ -95,7 +95,10 @@ INSTRUCTIONS = (
     "LLM-generated summaries (`topline`, `about`, `notes`). **Documents** "
     "(agendas, minutes, reports — usually PDFs) hang off either a meeting or "
     "a decision via `source_type` (`Meeting` | `Decision`) and `source_id`; "
-    "documents with `is_minutes=true` carry extracted text. **Decisions** are "
+    "a document carries extracted text when its `extract_status` is "
+    "`success`, which is *not* the same thing as its `is_minutes` flag — "
+    "`is_minutes` under-reports badly, so never filter on it to find "
+    "minutes. **Decisions** are "
     "officer/delegated decisions with `is_key` flags. **People** are "
     "councillors and officers with party and role. Full-text search covers "
     "**document text and document classifications only** — meetings, "
@@ -464,10 +467,20 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
             committee_id: Restrict to one committee (see `get_council`).
             date_from: Earliest meeting date, inclusive, as `YYYY-MM-DD`.
             date_to: Latest meeting date, inclusive, as `YYYY-MM-DD`.
-            has_minutes: When true, return only meetings that have a minutes
-                document attached — these are the meetings with extracted
-                text you can actually read. When false, only meetings
-                without one. Omit for both.
+            has_minutes: When true, return only meetings whose documents are
+                flagged as minutes. **This flag under-reports badly, so
+                avoid it.** It is derived from the same per-document
+                `is_minutes` flag that live data shows to be false even on
+                documents literally named `Printed+minutes+...pdf` whose
+                text extracted successfully. Filtering on it silently drops
+                real minutes, and an empty result is **not** evidence that a
+                council published none. Prefer listing the meetings you care
+                about unfiltered and checking each meeting's documents for
+                `extract_status == "success"` (then reading the `text` via
+                `get_document(include_text=true)`), or looking for "minutes"
+                in the document `url` or `name`. When false, only meetings
+                the flag says have no minutes — equally unreliable. Omit for
+                both, which is the safe default.
             page: One-based page number.
             per_page: Meetings per page (default 25; upstream caps at 100).
 
@@ -513,11 +526,23 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
             - `topline`, `about`, `notes` — LLM-generated summaries of the
               meeting. Often null; when present, read these first.
             - `committee` — the full committee record, so no extra call.
-            - `documents` — the agendas, reports and minutes published for
-              the meeting. Each has `is_minutes`: pass the `id` of a document
-              with `is_minutes=true` to `get_document(include_text=true)` to
-              read what was actually said. `extract_status` tells you whether
-              text extraction succeeded.
+            - `documents` — agendas, reports and minutes associated with the
+              meeting. **This list is not reliably scoped to this one
+              sitting**: it can carry the committee's wider document set,
+              and even papers belonging to other committees. Meeting 95384,
+              dated 11 Nov 2025, returns 161 documents whose `created_at`
+              runs from 10 Nov to 8 Dec 2025 and whose `url`s include a
+              Cabinet decisions pack dated 5 Nov 2025. Do not assume a
+              document listed here was published *for* this sitting — check
+              its `created_at` and its `url` against the meeting's `date`.
+
+              To find what was actually said, pick documents whose
+              `extract_status` is `success` and read them with
+              `get_document(include_text=true)`. **Do not use the
+              `is_minutes` flag to pick them**: it under-reports badly and
+              is false on documents that plainly are minutes, so a false
+              value tells you nothing. Checking the document `url` or `name`
+              for "minutes" is more reliable than the flag.
             - `decisions` — decisions recorded against this meeting.
             - `attendees` and `additional_attendees` — the councillors and
               officers present.
@@ -560,10 +585,20 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
             decision_id: Only documents attached to this decision.
             council_id: Only documents belonging to this council. Slow on its
                 own — combine with another filter or avoid.
-            is_minutes: When true, only minutes documents. **These are the
-                documents that carry extracted text** you can read with
-                `get_document(include_text=true)`; agendas and reports
-                usually do not.
+            is_minutes: When true, only documents flagged as minutes.
+                **This flag under-reports badly, so avoid filtering on
+                it.** Live data has documents literally named
+                `Printed+minutes+...pdf`, with `extract_status: "success"`
+                and the minutes text in them, whose `is_minutes` is false —
+                every one of the 161 documents on meeting 95384 is false.
+                Filtering here silently drops real minutes, and an empty
+                result is **not** evidence that none were published. Instead
+                list the documents unfiltered and pick the ones whose
+                `extract_status` is `success`, read the `text` with
+                `get_document(include_text=true)`, and look for "minutes" in
+                the `url` or `name`. Treat `is_minutes=true` as a weak
+                positive hint only; never read a false value as "not
+                minutes".
             kind: Free-text upstream classification of the document. Values
                 are not enumerated by the API; the value seen most often is
                 `unclassified`.
@@ -571,7 +606,13 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
                 enumerated by the API; `waiting` is what most records show.
                 Note this is *not* the same field as `extract_status` on the
                 returned records, which is the one that tells you whether
-                text extraction succeeded (`success`, `pending`).
+                text extraction succeeded. `extract_status` has three
+                values: `success` (text is there to read), `pending` (no
+                text yet, but it may arrive later) and `failed` (extraction
+                went wrong; there is no text and there never will be). Both
+                `pending` and `failed` return an empty `text` with
+                `text_length` 0, so check `extract_status` before concluding
+                a document is blank.
             page: One-based page number.
             per_page: Documents per page (default 25; upstream caps at 100).
 
@@ -611,9 +652,11 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
         """Get one document, optionally with a window of its extracted text.
 
         This is how you read what a council actually said: set
-        `include_text=true` on a document with `is_minutes=true` (or any
-        document whose `extract_status` is `success`) to get the text
-        extracted from the PDF.
+        `include_text=true` on any document whose `extract_status` is
+        `success` to get the text extracted from the PDF. `extract_status`
+        is the field to go by, **not `is_minutes`**, which under-reports so
+        badly that documents plainly named `Printed+minutes+...pdf` carry
+        `is_minutes: false`.
 
         **Text is returned in windows, not all at once.** Extracted minutes
         can run to hundreds of thousands of characters, so a single call
@@ -648,10 +691,12 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
             (null once you have reached the end). When `include_text` is
             false there is no `text` key at all. An empty `text` with
             `text_length` 0 means extraction has not produced any text —
-            check `extract_status`. Note this record **omits the `name` key
-            entirely**, whereas `list_documents` items and search hits carry
-            `name` (usually null); do not treat its absence here as a
-            difference in the document.
+            check `extract_status`, which is one of `success`, `pending`
+            (nothing yet, may arrive later) or `failed` (extraction went
+            wrong; no text now and none ever). Note this record **omits the
+            `name` key entirely**, whereas `list_documents` items and search
+            hits carry `name` (usually null); do not treat its absence here
+            as a difference in the document.
         """
         client = ctx.request_context.lifespan_context.client
         try:
@@ -690,8 +735,8 @@ def _register_tools(server: MCPServer[AppContext]) -> None:
         Not every document has a stored file: this legitimately **404s with
         "Document has no stored file"** when the scraper has not yet
         downloaded the PDF. Check the document's `extract_status` first — a
-        `pending` document has nothing to download yet, whereas `success`
-        means the file is there.
+        `pending` or `failed` document may well have nothing to download,
+        whereas `success` means the file is there.
 
         Args:
             document_id: The document's `id`.
