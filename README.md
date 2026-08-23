@@ -201,3 +201,10 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy
 ```
+
+## Licence
+
+[GNU Affero General Public License v3.0 or later](LICENSE)
+(`AGPL-3.0-or-later`). This server is intended to be run as a network
+service, so AGPL section 13 applies: anyone offering it over a network must
+offer its users the corresponding source.
